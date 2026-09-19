@@ -42,6 +42,7 @@ SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "LavoriPubblici")
 
 CATEGORIES = {"sfalci", "potature", "asfaltature"}
 STATI = {"da_fare", "in_corso", "fatto"}
+ROLES = {"viewer", "editor"}
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_SPECIALS = "!@#$%&*"
 
@@ -187,13 +188,16 @@ def init_db():
                 password_hash TEXT NOT NULL,
                 display_name TEXT NOT NULL,
                 email TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'user',
+                role TEXT NOT NULL DEFAULT 'viewer',
                 active INTEGER NOT NULL DEFAULT 1,
                 must_change_password INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL
             )
             """
         )
+        # Migrazione: il vecchio ruolo unico "user" diventa "editor" (stessi permessi
+        # che aveva prima dell'introduzione dei livelli viewer/editor).
+        conn.execute("UPDATE users SET role = 'editor' WHERE role = 'user'")
 
 
 init_db()
@@ -249,6 +253,13 @@ def require_admin(request: Request) -> Session:
     return session
 
 
+def require_editor(request: Request) -> Session:
+    session = require_active_session(request)
+    if session.role not in ("admin", "editor"):
+        raise HTTPException(status_code=403, detail="Il tuo account può solo visualizzare, non modificare")
+    return session
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -262,11 +273,13 @@ class UserCreate(BaseModel):
     username: str
     display_name: str
     email: str
+    role: str = "viewer"
 
 
 class UserUpdate(BaseModel):
     display_name: str | None = None
     active: bool | None = None
+    role: str | None = None
 
 
 class PointCreate(BaseModel):
@@ -411,6 +424,8 @@ async def create_user(body: UserCreate, session: Session = Depends(require_admin
         raise HTTPException(status_code=400, detail="username e display_name obbligatori")
     if not email or not EMAIL_RE.match(email):
         raise HTTPException(status_code=400, detail="email non valida")
+    if body.role not in ROLES:
+        raise HTTPException(status_code=400, detail=f"ruolo non valido, valori ammessi: {', '.join(sorted(ROLES))}")
     if secrets.compare_digest(username, ADMIN_USER.lower()):
         raise HTTPException(status_code=400, detail="username riservato")
 
@@ -424,9 +439,9 @@ async def create_user(body: UserCreate, session: Session = Depends(require_admin
         cur = conn.execute(
             """
             INSERT INTO users (username, password_hash, display_name, email, role, active, must_change_password, created_at)
-            VALUES (?, ?, ?, ?, 'user', 1, 1, ?)
+            VALUES (?, ?, ?, ?, ?, 1, 1, ?)
             """,
-            (username, password_hash, display_name, email, now_iso()),
+            (username, password_hash, display_name, email, body.role, now_iso()),
         )
         user_id = cur.lastrowid
 
@@ -449,6 +464,10 @@ async def update_user(user_id: int, body: UserUpdate, session: Session = Depends
         updates["display_name"] = dn
     if body.active is not None:
         updates["active"] = 1 if body.active else 0
+    if body.role is not None:
+        if body.role not in ROLES:
+            raise HTTPException(status_code=400, detail=f"ruolo non valido, valori ammessi: {', '.join(sorted(ROLES))}")
+        updates["role"] = body.role
 
     if not updates:
         raise HTTPException(status_code=400, detail="nessun campo da aggiornare")
@@ -526,7 +545,7 @@ async def list_points(category: str, session: Session = Depends(require_active_s
 
 
 @app.post("/api/points")
-async def create_point(body: PointCreate, session: Session = Depends(require_active_session)):
+async def create_point(body: PointCreate, session: Session = Depends(require_editor)):
     _validate_category(body.category)
     _validate_stato(body.stato)
     now = now_iso()
@@ -544,7 +563,7 @@ async def create_point(body: PointCreate, session: Session = Depends(require_act
 
 
 @app.put("/api/points/{point_id}")
-async def update_point(point_id: int, body: PointUpdate, session: Session = Depends(require_active_session)):
+async def update_point(point_id: int, body: PointUpdate, session: Session = Depends(require_editor)):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM points WHERE id = ?", (point_id,)).fetchone()
         if not row:
@@ -565,7 +584,7 @@ async def update_point(point_id: int, body: PointUpdate, session: Session = Depe
 
 
 @app.delete("/api/points/{point_id}")
-async def delete_point(point_id: int, session: Session = Depends(require_active_session)):
+async def delete_point(point_id: int, session: Session = Depends(require_editor)):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM points WHERE id = ?", (point_id,)).fetchone()
         if not row:

@@ -31,6 +31,13 @@
           <label for="email">Email</label>
           <input type="email" id="email" required />
         </div>
+        <div>
+          <label for="role">Livello</label>
+          <select id="role">
+            <option value="viewer">Visualizzatore (sola lettura)</option>
+            <option value="editor">Editor (può modificare)</option>
+          </select>
+        </div>
       </div>
       <div class="error-msg" id="create-error"></div>
       <button type="submit" class="btn-primary">Crea utente e invia credenziali</button>
@@ -44,6 +51,7 @@
           <th>Utente</th>
           <th>Nome</th>
           <th>Email</th>
+          <th>Livello</th>
           <th>Stato</th>
           <th>Azioni</th>
         </tr>

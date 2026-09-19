@@ -34,6 +34,7 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 const markers = new Map();
+let canEdit = false;
 
 function markerIcon(stato) {
   return L.divIcon({
@@ -46,6 +47,18 @@ function markerIcon(stato) {
 
 function popupHtml(point) {
   const isNew = point.id === undefined;
+
+  if (!canEdit) {
+    return `
+      <div class="popup-form" data-id="${isNew ? "" : point.id}">
+        <label>Stato</label>
+        <div>${STATO_LABELS[point.stato] || point.stato}</div>
+        <label>Note</label>
+        <div>${point.note ? escapeHtml(point.note) : "—"}</div>
+      </div>
+    `;
+  }
+
   return `
     <div class="popup-form" data-id="${isNew ? "" : point.id}">
       <label>Stato</label>
@@ -74,6 +87,7 @@ function escapeHtml(str) {
 }
 
 function bindPopupActions(marker, point) {
+  if (!canEdit) return;
   marker.on("popupopen", () => {
     const el = marker.getPopup().getElement();
     const saveBtn = el.querySelector(".btn-save");
@@ -131,6 +145,7 @@ function addMarker(point) {
 }
 
 map.on("click", (e) => {
+  if (!canEdit) return;
   const point = { lat: e.latlng.lat, lon: e.latlng.lng, note: "", stato: "da_fare" };
   const marker = addMarker(point);
   marker.openPopup();
@@ -146,5 +161,8 @@ async function loadPoints() {
 }
 
 requireAuth().then((me) => {
-  if (me) loadPoints();
+  if (!me) return;
+  canEdit = me.role === "admin" || me.role === "editor";
+  document.getElementById("hint-text").hidden = !canEdit;
+  loadPoints();
 });
