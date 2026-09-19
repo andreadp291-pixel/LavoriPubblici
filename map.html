@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LavoriPubblici - Mappa</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+</head>
+<body>
+  <div class="map-header">
+    <a class="back-link" href="dashboard.html">&larr; Dashboard</a>
+    <h1 id="page-title">Mappa</h1>
+    <button class="btn-logout" onclick="logout()">Esci</button>
+  </div>
+
+  <div id="map"></div>
+  <div class="legend">
+    <span><span class="dot da_fare"></span> Da fare</span>
+    <span><span class="dot in_corso"></span> In corso</span>
+    <span><span class="dot fatto"></span> Fatto</span>
+  </div>
+  <p style="color:var(--muted); font-size:0.85rem; margin-top:8px;">
+    Clicca sulla mappa per aggiungere un punto.
+  </p>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/map.js"></script>
+</body>
+</html>

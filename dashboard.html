@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LavoriPubblici - Dashboard</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="dashboard-wrap">
+    <div class="dashboard-header">
+      <h1>LavoriPubblici</h1>
+      <button class="btn-logout" onclick="logout()">Esci</button>
+    </div>
+
+    <div class="service-grid">
+      <a class="service-btn sfalci" href="map.html?cat=sfalci">
+        <span class="icon">🌱</span>
+        Sfalci erba
+      </a>
+      <a class="service-btn potature" href="map.html?cat=potature">
+        <span class="icon">🌳</span>
+        Potature
+      </a>
+      <a class="service-btn asfaltature" href="map.html?cat=asfaltature">
+        <span class="icon">🛣️</span>
+        Asfaltature
+      </a>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    requireAuth();
+  </script>
+</body>
+</html>

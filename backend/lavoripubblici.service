@@ -1,0 +1,16 @@
+[Unit]
+Description=LavoriPubblici API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=andrea
+WorkingDirectory=/home/andrea/LavoriPubblici/backend
+EnvironmentFile=/home/andrea/LavoriPubblici/backend/.env
+ExecStart=/home/andrea/LavoriPubblici/backend/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8094
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

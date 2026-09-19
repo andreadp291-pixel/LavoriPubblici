@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LavoriPubblici - Accesso</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <h1>LavoriPubblici</h1>
+    <p class="subtitle">Comune di Castelfranco Veneto</p>
+    <form id="login-form">
+      <label for="username">Utente</label>
+      <input type="text" id="username" autocomplete="username" required />
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" required />
+      <div class="error-msg" id="error-msg"></div>
+      <button type="submit" class="btn-primary">Accedi</button>
+    </form>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      const errorEl = document.getElementById("error-msg");
+      errorEl.textContent = "";
+
+      try {
+        const res = await fetch(`${API_BASE}/api/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Credenziali non valide");
+        }
+        localStorage.setItem("lp_token", data.token);
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        errorEl.textContent = err.message || "Errore di accesso";
+      }
+    });
+  </script>
+</body>
+</html>
