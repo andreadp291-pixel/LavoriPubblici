@@ -245,6 +245,111 @@ button {
   margin-top: 10px;
 }
 
+.draw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.draw-toolbar button {
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+}
+
+.draw-toolbar #btn-draw-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.draw-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-right: 4px;
+}
+
+#draw-active-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.element-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px 16px;
+}
+
+.element-panel-inner {
+  width: 100%;
+  max-width: 480px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+}
+
+.element-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.element-panel-header h2 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.panel-close {
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.element-panel label {
+  margin-top: 10px;
+}
+
+.element-panel textarea,
+.element-panel input[type="date"] {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+.element-panel textarea {
+  resize: vertical;
+  min-height: 50px;
+}
+
+.element-panel textarea:disabled,
+.element-panel input:disabled {
+  background: var(--bg);
+  color: var(--muted);
+}
+
 .popup-actions button {
   flex: 1;
   padding: 6px 8px;

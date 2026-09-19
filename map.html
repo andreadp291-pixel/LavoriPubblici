@@ -19,15 +19,46 @@
     <button class="btn-logout" onclick="logout()">Esci</button>
   </div>
 
+  <div id="draw-toolbar" class="draw-toolbar" hidden>
+    <span id="draw-idle-controls">
+      <button id="btn-draw-point" hidden>+ Punto</button>
+      <button id="btn-draw-line" hidden>+ Linea</button>
+      <button id="btn-draw-polygon" hidden>+ Area</button>
+    </span>
+    <span id="draw-active-controls" hidden>
+      <span class="draw-hint" id="draw-hint"></span>
+      <button id="btn-draw-finish" class="btn-save">Fine</button>
+      <button id="btn-draw-cancel">Annulla</button>
+    </span>
+  </div>
+
   <div id="map"></div>
   <div class="legend">
-    <span><span class="dot da_fare"></span> Da fare</span>
-    <span><span class="dot in_corso"></span> In corso</span>
-    <span><span class="dot fatto"></span> Fatto</span>
+    <span><span class="dot" style="background:hsl(120,65%,40%)"></span> Fatto di recente</span>
+    <span><span class="dot" style="background:hsl(60,65%,45%)"></span> Da un po'</span>
+    <span><span class="dot" style="background:hsl(0,65%,45%)"></span> Da molto tempo</span>
+    <span><span class="dot" style="background:#555"></span> Mai eseguito</span>
   </div>
-  <p id="hint-text" style="color:var(--muted); font-size:0.85rem; margin-top:8px;" hidden>
-    Clicca sulla mappa per aggiungere un punto.
-  </p>
+
+  <div id="element-panel" class="element-panel" hidden>
+    <div class="element-panel-inner">
+      <div class="element-panel-header">
+        <h2 id="panel-title">Dettagli</h2>
+        <button class="panel-close" id="panel-close">&times;</button>
+      </div>
+      <label>Nota</label>
+      <textarea id="panel-note"></textarea>
+      <label>Programmato per il</label>
+      <input type="date" id="panel-programmata" />
+      <label>Ultima esecuzione</label>
+      <input type="date" id="panel-ultima" />
+      <div class="error-msg" id="panel-error"></div>
+      <div class="popup-actions">
+        <button class="btn-save" id="panel-save">Salva</button>
+        <button class="btn-delete" id="panel-delete" hidden>Elimina</button>
+      </div>
+    </div>
+  </div>
 
   <script
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

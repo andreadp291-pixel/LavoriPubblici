@@ -3,6 +3,7 @@
 LavoriPubblici - backend API
 Gestione sfalci erba, potature, asfaltature (mappa OSM) per il Comune.
 """
+import json
 import os
 import re
 import secrets
@@ -41,10 +42,17 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "LavoriPubblici")
 
 CATEGORIES = {"sfalci", "potature", "asfaltature"}
-STATI = {"da_fare", "in_corso", "fatto"}
 ROLES = {"viewer", "editor"}
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_SPECIALS = "!@#$%&*"
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# Ogni categoria ammette solo certi tipi di geometria sulla mappa.
+CATEGORY_GEOM_TYPES = {
+    "asfaltature": {"line"},
+    "sfalci": {"polygon"},
+    "potature": {"point", "line"},
+}
 
 app = FastAPI(title="LavoriPubblici API")
 
@@ -166,15 +174,19 @@ def get_db():
 
 def init_db():
     with get_db() as conn:
+        # La vecchia tabella "points" (solo punti, senza date) è sostituita da
+        # "elements" (punti/linee/aree con date di programmazione/esecuzione).
+        conn.execute("DROP TABLE IF EXISTS points")
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS points (
+            CREATE TABLE IF NOT EXISTS elements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 category TEXT NOT NULL,
-                lat REAL NOT NULL,
-                lon REAL NOT NULL,
+                geom_type TEXT NOT NULL,
+                geom_coords TEXT NOT NULL,
                 note TEXT DEFAULT '',
-                stato TEXT NOT NULL DEFAULT 'da_fare',
+                data_programmata TEXT,
+                data_ultima_esecuzione TEXT,
                 creato_il TEXT NOT NULL,
                 aggiornato_il TEXT NOT NULL
             )
@@ -282,17 +294,19 @@ class UserUpdate(BaseModel):
     role: str | None = None
 
 
-class PointCreate(BaseModel):
+class ElementCreate(BaseModel):
     category: str
-    lat: float
-    lon: float
+    geom_type: str
+    geom_coords: list
     note: str = ""
-    stato: str = "da_fare"
+    data_programmata: str | None = None
+    data_ultima_esecuzione: str | None = None
 
 
-class PointUpdate(BaseModel):
-    note: str | None = None
-    stato: str | None = None
+class ElementUpdate(BaseModel):
+    note: str = ""
+    data_programmata: str | None = None
+    data_ultima_esecuzione: str | None = None
 
 
 def _validate_category(category: str):
@@ -300,9 +314,40 @@ def _validate_category(category: str):
         raise HTTPException(status_code=400, detail=f"Categoria non valida: {category}")
 
 
-def _validate_stato(stato: str):
-    if stato not in STATI:
-        raise HTTPException(status_code=400, detail=f"Stato non valido: {stato}")
+def _validate_date(value: str | None, field_name: str):
+    if value is None or value == "":
+        return None
+    if not DATE_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"{field_name} deve essere una data in formato YYYY-MM-DD")
+    return value
+
+
+def _validate_geom(category: str, geom_type: str, geom_coords: list):
+    allowed = CATEGORY_GEOM_TYPES.get(category, set())
+    if geom_type not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Per la categoria '{category}' il tipo di geometria ammesso è: {', '.join(sorted(allowed))}",
+        )
+
+    def _is_coord(c):
+        return (
+            isinstance(c, (list, tuple))
+            and len(c) == 2
+            and all(isinstance(v, (int, float)) for v in c)
+        )
+
+    if geom_type == "point":
+        if not _is_coord(geom_coords):
+            raise HTTPException(status_code=400, detail="Coordinate punto non valide")
+    elif geom_type == "line":
+        if not isinstance(geom_coords, list) or len(geom_coords) < 2 or not all(_is_coord(c) for c in geom_coords):
+            raise HTTPException(status_code=400, detail="Una linea richiede almeno 2 punti validi")
+    elif geom_type == "polygon":
+        if not isinstance(geom_coords, list) or len(geom_coords) < 3 or not all(_is_coord(c) for c in geom_coords):
+            raise HTTPException(status_code=400, detail="Un'area richiede almeno 3 punti validi")
+    else:
+        raise HTTPException(status_code=400, detail=f"Tipo di geometria non valido: {geom_type}")
 
 
 def _user_public(row: sqlite3.Row) -> dict:
@@ -534,62 +579,83 @@ async def delete_user(user_id: int, session: Session = Depends(require_admin)):
     return {"ok": True}
 
 
+def _element_public(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d["geom_coords"] = json.loads(d["geom_coords"])
+    return d
+
+
 @app.get("/api/points")
-async def list_points(category: str, session: Session = Depends(require_active_session)):
+async def list_elements(category: str, session: Session = Depends(require_active_session)):
     _validate_category(category)
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM points WHERE category = ? ORDER BY id DESC", (category,)
+            "SELECT * FROM elements WHERE category = ? ORDER BY id DESC", (category,)
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_element_public(r) for r in rows]
 
 
 @app.post("/api/points")
-async def create_point(body: PointCreate, session: Session = Depends(require_editor)):
+async def create_element(body: ElementCreate, session: Session = Depends(require_editor)):
     _validate_category(body.category)
-    _validate_stato(body.stato)
+    _validate_geom(body.category, body.geom_type, body.geom_coords)
+    data_programmata = _validate_date(body.data_programmata, "data_programmata")
+    data_ultima_esecuzione = _validate_date(body.data_ultima_esecuzione, "data_ultima_esecuzione")
+
     now = now_iso()
     with get_db() as conn:
         cur = conn.execute(
             """
-            INSERT INTO points (category, lat, lon, note, stato, creato_il, aggiornato_il)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO elements
+                (category, geom_type, geom_coords, note, data_programmata, data_ultima_esecuzione, creato_il, aggiornato_il)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (body.category, body.lat, body.lon, body.note, body.stato, now, now),
+            (
+                body.category,
+                body.geom_type,
+                json.dumps(body.geom_coords),
+                body.note,
+                data_programmata,
+                data_ultima_esecuzione,
+                now,
+                now,
+            ),
         )
         new_id = cur.lastrowid
-        row = conn.execute("SELECT * FROM points WHERE id = ?", (new_id,)).fetchone()
-        return dict(row)
+        row = conn.execute("SELECT * FROM elements WHERE id = ?", (new_id,)).fetchone()
+        return _element_public(row)
 
 
-@app.put("/api/points/{point_id}")
-async def update_point(point_id: int, body: PointUpdate, session: Session = Depends(require_editor)):
+@app.put("/api/points/{element_id}")
+async def update_element(element_id: int, body: ElementUpdate, session: Session = Depends(require_editor)):
+    data_programmata = _validate_date(body.data_programmata, "data_programmata")
+    data_ultima_esecuzione = _validate_date(body.data_ultima_esecuzione, "data_ultima_esecuzione")
+
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM points WHERE id = ?", (point_id,)).fetchone()
+        row = conn.execute("SELECT * FROM elements WHERE id = ?", (element_id,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Punto non trovato")
-
-        stato = body.stato if body.stato is not None else row["stato"]
-        note = body.note if body.note is not None else row["note"]
-        if body.stato is not None:
-            _validate_stato(body.stato)
+            raise HTTPException(status_code=404, detail="Elemento non trovato")
 
         now = now_iso()
         conn.execute(
-            "UPDATE points SET note = ?, stato = ?, aggiornato_il = ? WHERE id = ?",
-            (note, stato, now, point_id),
+            """
+            UPDATE elements
+            SET note = ?, data_programmata = ?, data_ultima_esecuzione = ?, aggiornato_il = ?
+            WHERE id = ?
+            """,
+            (body.note, data_programmata, data_ultima_esecuzione, now, element_id),
         )
-        row = conn.execute("SELECT * FROM points WHERE id = ?", (point_id,)).fetchone()
-        return dict(row)
+        row = conn.execute("SELECT * FROM elements WHERE id = ?", (element_id,)).fetchone()
+        return _element_public(row)
 
 
-@app.delete("/api/points/{point_id}")
-async def delete_point(point_id: int, session: Session = Depends(require_editor)):
+@app.delete("/api/points/{element_id}")
+async def delete_element(element_id: int, session: Session = Depends(require_editor)):
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM points WHERE id = ?", (point_id,)).fetchone()
+        row = conn.execute("SELECT * FROM elements WHERE id = ?", (element_id,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Punto non trovato")
-        conn.execute("DELETE FROM points WHERE id = ?", (point_id,))
+            raise HTTPException(status_code=404, detail="Elemento non trovato")
+        conn.execute("DELETE FROM elements WHERE id = ?", (element_id,))
         return {"ok": True}
 
 
