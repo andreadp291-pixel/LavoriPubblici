@@ -40,7 +40,9 @@
           throw new Error(data.detail || "Credenziali non valide");
         }
         localStorage.setItem("lp_token", data.token);
-        window.location.href = "dashboard.html";
+        localStorage.setItem("lp_role", data.role);
+        localStorage.setItem("lp_display_name", data.display_name);
+        window.location.href = data.must_change_password ? "change-password.html" : "dashboard.html";
       } catch (err) {
         errorEl.textContent = err.message || "Errore di accesso";
       }

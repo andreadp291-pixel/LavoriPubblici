@@ -1,5 +1,3 @@
-requireAuth();
-
 const CATEGORY_LABELS = {
   sfalci: "Sfalci erba",
   potature: "Potature",
@@ -147,4 +145,6 @@ async function loadPoints() {
   }
 }
 
-loadPoints();
+requireAuth().then((me) => {
+  if (me) loadPoints();
+});

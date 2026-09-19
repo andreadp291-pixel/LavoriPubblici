@@ -10,7 +10,10 @@
   <div class="dashboard-wrap">
     <div class="dashboard-header">
       <h1>LavoriPubblici</h1>
-      <button class="btn-logout" onclick="logout()">Esci</button>
+      <div class="header-actions">
+        <a class="back-link" id="users-link" href="users.html" hidden>Gestione utenti</a>
+        <button class="btn-logout" onclick="logout()">Esci</button>
+      </div>
     </div>
 
     <div class="service-grid">
@@ -32,7 +35,12 @@
   <script src="js/config.js"></script>
   <script src="js/auth.js"></script>
   <script>
-    requireAuth();
+    (async function () {
+      const me = await requireAuth();
+      if (me && me.role === "admin") {
+        document.getElementById("users-link").hidden = false;
+      }
+    })();
   </script>
 </body>
 </html>
