@@ -308,17 +308,20 @@ def _user_public(row: sqlite3.Row) -> dict:
 @app.post("/api/login")
 async def login(body: LoginRequest, request: Request):
     ip = request.client.host if request.client else "unknown"
+    username = body.username.strip()
+    # Chiave IP+username (non solo IP): dietro il tunnel Tailscale tutte le
+    # richieste arrivano dallo stesso IP locale, quindi un limite per sola IP
+    # bloccherebbe il login di tutti gli utenti per l'errore di uno solo.
+    key = f"{ip}:{username.lower()}"
     now = time.time()
-    attempts = [t for t in login_attempts[ip] if now - t < 600]
+    attempts = [t for t in login_attempts[key] if now - t < 600]
 
     if len(attempts) >= 10:
         raise HTTPException(status_code=429, detail="Troppi tentativi, riprova più tardi")
 
-    username = body.username.strip()
-
     # 1. admin di bootstrap (credenziali da env)
     if secrets.compare_digest(username, ADMIN_USER) and secrets.compare_digest(body.password, ADMIN_PASS):
-        login_attempts.pop(ip, None)
+        login_attempts.pop(key, None)
         token = secrets.token_hex(32)
         sessions[token] = 0
         return {
@@ -340,7 +343,7 @@ async def login(body: LoginRequest, request: Request):
         try:
             ph.verify(row["password_hash"], body.password)
             if row["active"]:
-                login_attempts.pop(ip, None)
+                login_attempts.pop(key, None)
                 token = secrets.token_hex(32)
                 sessions[token] = row["id"]
                 return {
@@ -354,7 +357,7 @@ async def login(body: LoginRequest, request: Request):
             pass
 
     attempts.append(now)
-    login_attempts[ip] = attempts
+    login_attempts[key] = attempts
     raise HTTPException(status_code=401, detail="Credenziali non valide")
 
 
