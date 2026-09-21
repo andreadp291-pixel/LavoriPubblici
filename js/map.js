@@ -294,6 +294,7 @@ map.on("popupclose", (e) => {
       cancelDrawing();
     }
     panelState = null;
+    if (importQueue.length > 0) setTimeout(openNextImportCandidate, 50);
   }
 });
 
@@ -420,6 +421,13 @@ function openCreatePanel(geomType, coords, note) {
 
 // ── Import da OpenStreetMap (Overpass API) ──
 let osmCandidatesLayer = null;
+const importQueue = []; // { geomType, coords, note } — aperti in editing uno alla volta dopo l'import
+
+function openNextImportCandidate() {
+  if (importQueue.length === 0) return;
+  const next = importQueue.shift();
+  openCreatePanel(next.geomType, next.coords, next.note);
+}
 
 // Configurazione dell'import per categoria: query Overpass e etichette risultanti.
 const OSM_IMPORT = {
@@ -491,10 +499,18 @@ async function importFromOsm() {
     data.elements.forEach((el) => {
       const note = cfg.tagLabel(el.tags || {});
       if (el.type === "node") {
+        const nodeId = el.id;
         const coord = [el.lat, el.lon];
         const marker = L.marker(coord, { icon: osmCandidateStyleMarker() });
-        marker.on("click", () => openCreatePanel("point", coord, note));
+        // Cerchio invisibile più largo attorno al punto, solo per facilitare il click.
+        const hitArea = L.circleMarker(coord, { radius: 16, color: "#000", weight: 0, opacity: 0, fillOpacity: 0 });
+        const toggle = () => togglePointSelection(nodeId, coord, note, marker);
+        marker.on("click", toggle);
+        hitArea.on("click", toggle);
+        hitArea.on("mouseover", () => { if (!osmSelections.has(nodeId)) marker.setOpacity(0.6); });
+        hitArea.on("mouseout", () => { if (!osmSelections.has(nodeId)) marker.setOpacity(1); });
         marker.addTo(osmCandidatesLayer);
+        hitArea.addTo(osmCandidatesLayer);
         count++;
       } else if (el.type === "way" && el.geometry && el.geometry.length >= 2) {
         const wayId = el.id;
@@ -603,19 +619,38 @@ function updateOsmSelectControls() {
   const n = osmSelections.size;
   osmSelectControls.hidden = n === 0;
   idleControls.hidden = n > 0;
-  btnOsmImportSelection.textContent = n > 1 ? `Importa ${n} tratti selezionati` : "Importa questo tratto";
+  btnOsmImportSelection.textContent = n > 1 ? `Importa ${n} elementi selezionati` : "Importa questo elemento";
+}
+
+function selectedPointIcon() {
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:18px;height:18px;border-radius:50%;background:#c98a1f;border:3px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+}
+
+function togglePointSelection(nodeId, coord, note, marker) {
+  if (osmSelections.has(nodeId)) {
+    deselectOsmEntry(nodeId);
+    return;
+  }
+  marker.setIcon(selectedPointIcon());
+  osmSelections.set(nodeId, { type: "point", coord, note, marker });
+  updateOsmSelectControls();
 }
 
 function toggleOsmSelection(wayId, coords, note, sourceVisible) {
   if (osmSelections.has(wayId)) {
-    deselectOsmWay(wayId);
+    deselectOsmEntry(wayId);
     return;
   }
 
   const cum = lineCumulativeMeters(coords);
   const total = cum[cum.length - 1];
 
-  const s = { coords, note, cum, total, startDist: 0, endDist: total, sourceVisible };
+  const s = { type: "line", coords, note, cum, total, startDist: 0, endDist: total, sourceVisible };
   osmSelections.set(wayId, s);
 
   const makeHandle = (which) => {
@@ -646,51 +681,36 @@ function toggleOsmSelection(wayId, coords, note, sourceVisible) {
   updateOsmSelectControls();
 }
 
-function deselectOsmWay(wayId) {
-  const s = osmSelections.get(wayId);
+function deselectOsmEntry(id) {
+  const s = osmSelections.get(id);
   if (!s) return;
-  if (s.startMarker) osmCandidatesLayer.removeLayer(s.startMarker);
-  if (s.endMarker) osmCandidatesLayer.removeLayer(s.endMarker);
-  if (s.draftLayer) osmCandidatesLayer.removeLayer(s.draftLayer);
-  s.sourceVisible.setStyle({ weight: 4, color: "#8a5a2b" });
-  osmSelections.delete(wayId);
+  if (s.type === "point") {
+    s.marker.setIcon(osmCandidateStyleMarker());
+  } else {
+    if (s.startMarker) osmCandidatesLayer.removeLayer(s.startMarker);
+    if (s.endMarker) osmCandidatesLayer.removeLayer(s.endMarker);
+    if (s.draftLayer) osmCandidatesLayer.removeLayer(s.draftLayer);
+    s.sourceVisible.setStyle({ weight: 4, color: "#8a5a2b" });
+  }
+  osmSelections.delete(id);
   updateOsmSelectControls();
 }
 
 function clearOsmSelection() {
-  Array.from(osmSelections.keys()).forEach(deselectOsmWay);
+  Array.from(osmSelections.keys()).forEach(deselectOsmEntry);
 }
 
 btnOsmCancelSelection.addEventListener("click", clearOsmSelection);
-btnOsmImportSelection.addEventListener("click", async () => {
-  const entries = Array.from(osmSelections.values());
+btnOsmImportSelection.addEventListener("click", () => {
+  const entries = Array.from(osmSelections.values()).map((s) =>
+    s.type === "point"
+      ? { geomType: "point", coords: s.coord, note: s.note }
+      : { geomType: "line", coords: trimLineCoords(s.coords, s.cum, s.startDist, s.endDist), note: s.note }
+  );
   if (entries.length === 0) return;
   clearOsmSelection();
-
-  btnImportOsm.disabled = true;
-  let ok = 0;
-  for (const s of entries) {
-    const trimmed = trimLineCoords(s.coords, s.cum, s.startDist, s.endDist);
-    try {
-      const created = await apiFetch("/api/points", {
-        method: "POST",
-        body: JSON.stringify({
-          category,
-          geom_type: "line",
-          geom_coords: trimmed,
-          note: s.note,
-          data_programmata: null,
-          data_ultima_esecuzione: null,
-        }),
-      });
-      addElementToMap(created);
-      ok++;
-    } catch (err) {
-      alert(`Errore importando "${s.note}": ` + (err.message || err));
-    }
-  }
-  btnImportOsm.disabled = false;
-  if (ok > 0) alert(`${ok} element${ok === 1 ? "o" : "i"} importat${ok === 1 ? "o" : "i"} con successo.`);
+  importQueue.push(...entries);
+  openNextImportCandidate();
 });
 
 btnPoint.addEventListener("click", () => startDrawing("point"));
