@@ -638,3 +638,18 @@ input[type="email"],
     color: var(--danger);
   }
 }
+
+@keyframes blink-today {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
+.blink-today {
+  animation: blink-today 1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blink-today {
+    animation-duration: 2.5s;
+  }
+}

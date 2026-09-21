@@ -134,9 +134,15 @@ function formatDate(dateStr) {
 }
 
 // ── Rendering geometrie ──
-function markerIcon(color) {
+function todayStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function markerIcon(color, blink) {
   return L.divIcon({
-    className: "",
+    className: blink ? "blink-today" : "",
     html: `<div style="width:18px;height:18px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 3px rgba(0,0,0,0.4);"></div>`,
     iconSize: [18, 18],
     iconAnchor: [9, 9],
@@ -145,15 +151,18 @@ function markerIcon(color) {
 
 function buildLayer(element) {
   const color = colorForLastDone(element.data_ultima_esecuzione);
+  // Interventi programmati per oggi: lampeggiano per farli notare (vedi .blink-today in CSS).
+  const blink = element.data_programmata === todayStr();
+  const className = blink ? "blink-today" : "";
   if (element.geom_type === "point") {
     const [lat, lon] = element.geom_coords;
-    return L.marker([lat, lon], { icon: markerIcon(color) });
+    return L.marker([lat, lon], { icon: markerIcon(color, blink) });
   }
   if (element.geom_type === "line") {
-    return L.polyline(element.geom_coords, { color, weight: 5 });
+    return L.polyline(element.geom_coords, { color, weight: 5, className });
   }
   if (element.geom_type === "polygon") {
-    return L.polygon(element.geom_coords, { color, fillColor: color, fillOpacity: 0.35, weight: 2 });
+    return L.polygon(element.geom_coords, { color, fillColor: color, fillOpacity: 0.35, weight: 2, className });
   }
 }
 
