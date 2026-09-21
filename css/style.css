@@ -31,6 +31,22 @@ body {
 
 body.map-page {
   padding-block: 12px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+body.map-page .map-header,
+body.map-page .draw-toolbar,
+body.map-page .legend {
+  flex: 0 0 auto;
+}
+
+body.map-page #map {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 260px;
 }
 
 .login-wrap {
