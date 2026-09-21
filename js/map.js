@@ -220,7 +220,7 @@ function wirePopupHandlers() {
 
 function openPanel(element, layer, latlng) {
   panelState = { element, layer, editing: element.id === undefined };
-  const popup = L.popup({ closeButton: true, minWidth: 240, autoPan: true })
+  const popup = L.popup({ closeButton: true, minWidth: 200, maxWidth: 240, autoPan: true })
     .setLatLng(latlng)
     .setContent(buildPopupHtml())
     .openOn(map);

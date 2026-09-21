@@ -226,7 +226,9 @@ button {
 }
 
 .popup-form label {
-  margin-top: 8px;
+  display: block;
+  margin: 6px 0 2px;
+  font-size: 0.8rem;
 }
 
 .popup-form select,
@@ -235,13 +237,14 @@ button {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 0.9rem;
+  padding: 4px 6px;
+  font-size: 0.85rem;
 }
 
 .popup-form textarea {
   resize: vertical;
-  min-height: 50px;
+  min-height: 32px;
+  height: 32px;
 }
 
 .popup-form textarea:disabled,
@@ -251,18 +254,28 @@ button {
 }
 
 .popup-title {
-  font-size: 1rem;
-  margin: 0 0 4px;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.popup-form .error-msg {
+  margin: 2px 0;
+  min-height: 0;
 }
 
 .popup-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.popup-actions button {
+  padding: 5px 6px;
+  font-size: 0.8rem;
 }
 
 .leaflet-popup-content {
-  width: 240px !important;
+  margin: 10px 14px;
 }
 
 .draw-toolbar {
