@@ -103,25 +103,35 @@ const panelNote = document.getElementById("panel-note");
 const panelProgrammata = document.getElementById("panel-programmata");
 const panelUltima = document.getElementById("panel-ultima");
 const panelError = document.getElementById("panel-error");
+const panelEditBtn = document.getElementById("panel-edit");
 const panelSaveBtn = document.getElementById("panel-save");
 const panelDeleteBtn = document.getElementById("panel-delete");
 
-let panelState = null; // { mode: 'view'|'edit'|'create', element, layer }
+let panelState = null; // { element, layer, editing }
+
+function applyPanelMode() {
+  const isNew = panelState.element.id === undefined;
+  const editing = panelState.editing;
+  const fieldsEnabled = editing;
+
+  panelNote.disabled = !fieldsEnabled;
+  panelProgrammata.disabled = !fieldsEnabled;
+  panelUltima.disabled = !fieldsEnabled;
+
+  panelEditBtn.hidden = !canEdit || editing;
+  panelSaveBtn.hidden = !editing;
+  panelDeleteBtn.hidden = !editing || isNew;
+}
 
 function openPanel(element, layer) {
-  panelState = { element, layer };
+  panelState = { element, layer, editing: element.id === undefined };
   panelTitle.textContent = `${GEOM_LABELS[element.geom_type]} — ${CATEGORY_LABELS[category]}`;
   panelNote.value = element.note || "";
   panelProgrammata.value = element.data_programmata || "";
   panelUltima.value = element.data_ultima_esecuzione || "";
   panelError.textContent = "";
 
-  const readOnly = !canEdit;
-  panelNote.disabled = readOnly;
-  panelProgrammata.disabled = readOnly;
-  panelUltima.disabled = readOnly;
-  panelSaveBtn.hidden = readOnly;
-  panelDeleteBtn.hidden = readOnly || element.id === undefined;
+  applyPanelMode();
 
   panel.hidden = false;
 }
@@ -130,6 +140,12 @@ function closePanel() {
   panel.hidden = true;
   panelState = null;
 }
+
+panelEditBtn.addEventListener("click", () => {
+  if (!panelState) return;
+  panelState.editing = true;
+  applyPanelMode();
+});
 
 document.getElementById("panel-close").addEventListener("click", () => {
   if (panelState && panelState.element.id === undefined) {
