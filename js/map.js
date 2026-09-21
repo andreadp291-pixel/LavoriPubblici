@@ -120,14 +120,20 @@ function pointInRing(lat, lon, ring) {
   return inside;
 }
 
-// Nessun confine caricato ancora: non blocchiamo l'import (fail-open) piuttosto che
-// nascondere tutto per un fetch a Nominatim non ancora arrivato o fallito.
+// In condizioni normali il confine è già stato atteso (castelfrancoBoundaryReady)
+// prima di chiamare questa funzione; il fail-open resta solo come ultima difesa.
 function isInsideCastelfranco(lat, lon) {
   if (!castelfrancoBoundaryRings) return true;
   return castelfrancoBoundaryRings.some((ring) => pointInRing(lat, lon, ring));
 }
 
-fetch(`https://nominatim.openstreetmap.org/lookup?osm_type=R&osm_ids=45549&format=json&polygon_geojson=1`)
+// Promise attesa da importFromOsm PRIMA di filtrare: se non aspettassimo questo fetch,
+// un import lanciato subito dopo il caricamento pagina troverebbe castelfrancoBoundaryRings
+// ancora null e il filtro (fail-open per non nascondere tutto per un attimo) lascerebbe
+// passare qualunque cosa, vanificando la restrizione al confine comunale.
+const castelfrancoBoundaryReady = fetch(
+  `https://nominatim.openstreetmap.org/lookup?osm_type=R&osm_ids=45549&format=json&polygon_geojson=1`
+)
   .then((r) => r.json())
   .then((arr) => {
     if (arr && arr[0] && arr[0].geojson) {
@@ -626,11 +632,21 @@ async function importFromOsm() {
     return;
   }
   btnImportOsm.disabled = true;
+  btnImportOsm.textContent = "Attendo il confine comunale...";
+  await castelfrancoBoundaryReady;
+  if (!castelfrancoBoundaryRings) {
+    alert("Non riesco a scaricare il confine comunale da OpenStreetMap in questo momento: riprova tra poco.");
+    btnImportOsm.disabled = false;
+    btnImportOsm.textContent = cfg.buttonLabel;
+    return;
+  }
+
   btnImportOsm.textContent = "Ricerca su OSM in corso...";
   try {
     // Prima cerca sull'intera area comunale; se non trova nulla (es. area() non
     // disponibile su qualche mirror) riprova sul riquadro della vista corrente,
-    // cosi' l'utente ottiene comunque un risultato utile.
+    // cosi' l'utente ottiene comunque un risultato utile. Il confine reale (gia'
+    // caricato sopra) filtra comunque entrambi i casi.
     let data = await fetchOverpass(buildAreaOrBboxQuery(cfg.clauses, true));
     if (!data.elements || data.elements.length === 0) {
       const b = map.getBounds();
