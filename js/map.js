@@ -77,10 +77,11 @@ if (!CATEGORY_GEOM_TYPES[category]) {
 document.getElementById("page-title").textContent = CATEGORY_LABELS[category];
 
 const CASTELFRANCO = [45.6716, 11.9236];
-const map = L.map("map").setView(CASTELFRANCO, 14);
+const map = L.map("map", { maxZoom: 22 }).setView(CASTELFRANCO, 16);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
+  maxNativeZoom: 19,
   attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);
 
