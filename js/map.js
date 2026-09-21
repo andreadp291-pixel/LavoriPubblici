@@ -409,6 +409,17 @@ const OSM_IMPORT = {
       return "Elemento OSM";
     },
   },
+  asfaltature: {
+    buttonLabel: "Importa strade da OSM",
+    noneLabel: "Nessuna strada OSM trovata qui",
+    buildQuery: (bbox) => `[out:json][timeout:25];(
+      way["highway"]["highway"!="proposed"]["highway"!="construction"](${bbox});
+    );out geom;`,
+    tagLabel: (tags) => {
+      const name = tags.name ? ` ${tags.name}` : "";
+      return `Strada${name} (OSM)`;
+    },
+  },
 };
 
 function osmCandidateStyleMarker() {
