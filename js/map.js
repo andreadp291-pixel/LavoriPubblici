@@ -298,6 +298,7 @@ function setupDrawToolbar() {
 btnImportOsm.addEventListener("click", importFromOsm);
 
 function startDrawing(geomType) {
+  if (osmSelection) clearOsmSelection();
   drawing = { geomType, vertices: [], markers: [], shapeLayer: null, group: L.layerGroup().addTo(map) };
   idleControls.hidden = true;
   activeControls.hidden = false;
@@ -432,6 +433,7 @@ function osmCandidateStyleMarker() {
 }
 
 function clearOsmCandidates() {
+  if (osmSelection) clearOsmSelection();
   if (osmCandidatesLayer) {
     map.removeLayer(osmCandidatesLayer);
     osmCandidatesLayer = null;
@@ -471,11 +473,11 @@ async function importFromOsm() {
         const visible = L.polyline(coords, { color: "#8a5a2b", weight: 4, dashArray: "4 4" }).addTo(osmCandidatesLayer);
         // Linea invisibile più larga solo per facilitare il click, senza appesantire il disegno.
         const hitArea = L.polyline(coords, { color: "#000", weight: 20, opacity: 0 }).addTo(osmCandidatesLayer);
-        const select = () => openCreatePanel("line", coords, note);
+        const select = () => selectOsmLine(coords, note, visible);
         hitArea.on("click", select);
         visible.on("click", select);
-        hitArea.on("mouseover", () => visible.setStyle({ weight: 7, color: "#c98a1f" }));
-        hitArea.on("mouseout", () => visible.setStyle({ weight: 4, color: "#8a5a2b" }));
+        hitArea.on("mouseover", () => { if (!osmSelection) visible.setStyle({ weight: 7, color: "#c98a1f" }); });
+        hitArea.on("mouseout", () => { if (!osmSelection) visible.setStyle({ weight: 4, color: "#8a5a2b" }); });
         count++;
       }
     });
@@ -490,6 +492,140 @@ async function importFromOsm() {
     btnImportOsm.disabled = false;
   }
 }
+
+// ── Selezione di un tratto parziale di una strada OSM (trim handles, stile CastelSafe) ──
+const osmSelectControls = document.getElementById("osm-select-controls");
+const btnOsmImportSelection = document.getElementById("btn-osm-import-selection");
+const btnOsmCancelSelection = document.getElementById("btn-osm-cancel-selection");
+let osmSelection = null; // { coords, note, cum, total, startDist, endDist, startMarker, endMarker, draftLayer, sourceVisible }
+
+function lineCumulativeMeters(coords) {
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) {
+    cum.push(cum[i - 1] + map.distance(L.latLng(coords[i - 1]), L.latLng(coords[i])));
+  }
+  return cum;
+}
+
+function nearestPointOnLine(coords, latlng) {
+  let best = null;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [ax, ay] = coords[i];
+    const [bx, by] = coords[i + 1];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    let t = lenSq === 0 ? 0 : ((latlng.lat - ax) * dx + (latlng.lng - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const px = ax + t * dx;
+    const py = ay + t * dy;
+    const distSq = (latlng.lat - px) ** 2 + (latlng.lng - py) ** 2;
+    if (!best || distSq < best.distSq) {
+      best = { distSq, segIndex: i, segFraction: t, point: [px, py] };
+    }
+  }
+  return best;
+}
+
+function distanceAlongLine(coords, cum, segIndex, segFraction) {
+  const segLen = map.distance(L.latLng(coords[segIndex]), L.latLng(coords[segIndex + 1]));
+  return cum[segIndex] + segFraction * segLen;
+}
+
+function pointAtDistance(coords, cum, dist) {
+  for (let i = 0; i < cum.length - 1; i++) {
+    if (dist >= cum[i] && dist <= cum[i + 1]) {
+      const segLen = cum[i + 1] - cum[i];
+      const t = segLen === 0 ? 0 : (dist - cum[i]) / segLen;
+      const [ax, ay] = coords[i];
+      const [bx, by] = coords[i + 1];
+      return [ax + t * (bx - ax), ay + t * (by - ay)];
+    }
+  }
+  return coords[coords.length - 1];
+}
+
+function trimLineCoords(coords, cum, startDist, endDist) {
+  const result = [pointAtDistance(coords, cum, startDist)];
+  for (let i = 0; i < coords.length; i++) {
+    if (cum[i] > startDist && cum[i] < endDist) result.push(coords[i]);
+  }
+  result.push(pointAtDistance(coords, cum, endDist));
+  return result;
+}
+
+function trimHandleIcon() {
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:16px;height:16px;border-radius:50%;background:#c98a1f;border:3px solid white;box-shadow:0 0 3px rgba(0,0,0,0.5);"></div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+}
+
+function redrawOsmDraft() {
+  const s = osmSelection;
+  const trimmed = trimLineCoords(s.coords, s.cum, s.startDist, s.endDist);
+  if (s.draftLayer) osmCandidatesLayer.removeLayer(s.draftLayer);
+  s.draftLayer = L.polyline(trimmed, { color: "#c98a1f", weight: 6 }).addTo(osmCandidatesLayer);
+}
+
+function selectOsmLine(coords, note, sourceVisible) {
+  if (osmSelection) clearOsmSelection();
+
+  const cum = lineCumulativeMeters(coords);
+  const total = cum[cum.length - 1];
+  sourceVisible.setStyle({ weight: 4, color: "#8a5a2b" });
+
+  osmSelection = { coords, note, cum, total, startDist: 0, endDist: total, sourceVisible };
+
+  const makeHandle = (which) => {
+    const dist = which === "start" ? osmSelection.startDist : osmSelection.endDist;
+    const marker = L.marker(pointAtDistance(coords, cum, dist), { icon: trimHandleIcon(), draggable: true });
+    const MIN_GAP_M = 2;
+    marker.on("drag", (e) => {
+      const nearest = nearestPointOnLine(coords, e.target.getLatLng());
+      if (!nearest) return;
+      let dist2 = distanceAlongLine(coords, cum, nearest.segIndex, nearest.segFraction);
+      dist2 = Math.max(0, Math.min(total, dist2));
+      if (which === "start") {
+        osmSelection.startDist = Math.min(dist2, osmSelection.endDist - MIN_GAP_M);
+      } else {
+        osmSelection.endDist = Math.max(dist2, osmSelection.startDist + MIN_GAP_M);
+      }
+      e.target.setLatLng(pointAtDistance(coords, cum, which === "start" ? osmSelection.startDist : osmSelection.endDist));
+      redrawOsmDraft();
+    });
+    marker.addTo(osmCandidatesLayer);
+    return marker;
+  };
+
+  osmSelection.startMarker = makeHandle("start");
+  osmSelection.endMarker = makeHandle("end");
+  redrawOsmDraft();
+
+  idleControls.hidden = true;
+  osmSelectControls.hidden = false;
+}
+
+function clearOsmSelection() {
+  if (!osmSelection) return;
+  if (osmSelection.startMarker) osmCandidatesLayer.removeLayer(osmSelection.startMarker);
+  if (osmSelection.endMarker) osmCandidatesLayer.removeLayer(osmSelection.endMarker);
+  if (osmSelection.draftLayer) osmCandidatesLayer.removeLayer(osmSelection.draftLayer);
+  osmSelection = null;
+  idleControls.hidden = false;
+  osmSelectControls.hidden = true;
+}
+
+btnOsmCancelSelection.addEventListener("click", clearOsmSelection);
+btnOsmImportSelection.addEventListener("click", () => {
+  if (!osmSelection) return;
+  const trimmed = trimLineCoords(osmSelection.coords, osmSelection.cum, osmSelection.startDist, osmSelection.endDist);
+  const note = osmSelection.note;
+  clearOsmSelection();
+  openCreatePanel("line", trimmed, note);
+});
 
 btnPoint.addEventListener("click", () => startDrawing("point"));
 btnLine.addEventListener("click", () => startDrawing("line"));
