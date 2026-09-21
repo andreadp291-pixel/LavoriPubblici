@@ -176,16 +176,59 @@ function elementCenter(element) {
 }
 
 function addElementToMap(element) {
-  let layer = buildLayer(element);
-  if (element.geom_type === "line") {
-    // Fascia invisibile larga sopra la linea: col dito su smartphone una linea sottile
-    // è quasi impossibile da toccare con precisione.
-    const hit = L.polyline(element.geom_coords, { weight: 28, opacity: 0, lineCap: "round" });
-    layer = L.featureGroup([layer, hit]);
-  }
-  layer.addTo(map);
-  layer.on("click", (e) => openPanel(element, layer, e.latlng || elementCenter(element)));
+  const layer = buildLayer(element).addTo(map);
+  // Nessun handler di click sul singolo layer: la selezione è gestita dal tocco sulla
+  // mappa con tolleranza in pixel (vedi pickElementAt), molto più facile col dito.
   layersById.set(element.id, { element, layer });
+}
+
+function distToSegmentPx(p, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq === 0 ? 0 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+function pointInPolygonPx(p, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+    if (yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+const TAP_TOLERANCE_PX = 28;
+
+// Trova l'elemento salvato più vicino al punto toccato (entro una tolleranza in pixel).
+function pickElementAt(latlng) {
+  const tap = map.latLngToContainerPoint(latlng);
+  let best = null;
+  layersById.forEach(({ element }) => {
+    let dist;
+    if (element.geom_type === "point") {
+      const [lat, lon] = element.geom_coords;
+      dist = tap.distanceTo(map.latLngToContainerPoint([lat, lon]));
+    } else {
+      const pts = element.geom_coords.map((c) => map.latLngToContainerPoint(c));
+      let edge = Infinity;
+      const n = element.geom_type === "polygon" ? pts.length : pts.length - 1;
+      for (let i = 0; i < n; i++) {
+        edge = Math.min(edge, distToSegmentPx(tap, pts[i], pts[(i + 1) % pts.length]));
+      }
+      if (element.geom_type === "polygon" && pointInPolygonPx(tap, pts)) {
+        // Dentro l'area: selezionabile, ma i punti/linee vicini hanno la precedenza.
+        dist = Math.min(edge, TAP_TOLERANCE_PX - 1);
+        dist = Math.max(dist, TAP_TOLERANCE_PX * 0.6);
+      } else {
+        dist = edge;
+      }
+    }
+    if (dist <= TAP_TOLERANCE_PX && (!best || dist < best.dist)) best = { element, dist };
+  });
+  return best && best.element;
 }
 
 function removeElementFromMap(id) {
@@ -922,6 +965,14 @@ map.on("click", (e) => {
   }
 
   addVertex(coord);
+});
+
+map.on("click", (e) => {
+  if (drawing || osmCandidatesLayer) return;
+  const element = pickElementAt(e.latlng);
+  if (!element) return;
+  const entry = layersById.get(element.id);
+  openPanel(element, entry.layer, e.latlng);
 });
 
 requireAuth().then((me) => {
