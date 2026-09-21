@@ -517,3 +517,124 @@ button {
 .pw-toggle.active {
   color: var(--accent);
 }
+
+input[type="email"],
+.card-form select,
+.users-table select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  background: var(--card);
+  color: var(--text);
+}
+
+input[type="email"],
+.card-form select {
+  margin-bottom: 16px;
+}
+
+.users-table select {
+  padding: 6px 8px;
+  font-size: 0.85rem;
+}
+
+.users-table td {
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  .users-wrap .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .users-wrap .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .card-form {
+    padding: 16px;
+  }
+
+  .card-form .btn-primary {
+    width: 100%;
+  }
+
+  .users-table,
+  .users-table tbody,
+  .users-table tr,
+  .users-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .users-table {
+    background: transparent;
+    border: none;
+  }
+
+  .users-table thead {
+    display: none;
+  }
+
+  .users-table tr {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 6px 14px;
+    margin-bottom: 12px;
+  }
+
+  .users-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+  }
+
+  .users-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    text-align: left;
+  }
+
+  .users-table td select {
+    width: auto;
+    max-width: 60%;
+  }
+
+  .users-table td.row-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    border-bottom: none;
+    padding-top: 12px;
+  }
+
+  .users-table td.row-actions::before {
+    display: none;
+  }
+
+  .users-table td.row-actions button {
+    padding: 10px 8px;
+    font-size: 0.85rem;
+  }
+
+  .users-table td.row-actions .btn-delete {
+    grid-column: 1 / -1;
+    background: transparent;
+    color: var(--danger);
+  }
+}

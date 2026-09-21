@@ -62,12 +62,12 @@ async function loadUsers() {
     `;
 
     tr.innerHTML = `
-      <td>${escapeHtml(u.username)}</td>
-      <td>${escapeHtml(u.display_name)}</td>
-      <td>${escapeHtml(u.email)}</td>
-      <td>${roleSelect}</td>
-      <td>${statusLabel}</td>
-      <td class="row-actions">
+      <td data-label="Utente">${escapeHtml(u.username)}</td>
+      <td data-label="Nome">${escapeHtml(u.display_name)}</td>
+      <td data-label="Email">${escapeHtml(u.email)}</td>
+      <td data-label="Livello">${roleSelect}</td>
+      <td data-label="Stato">${statusLabel}</td>
+      <td class="row-actions" data-label="">
         <button data-action="toggle" data-id="${u.id}" data-active="${u.active}">${u.active ? "Disattiva" : "Riattiva"}</button>
         <button data-action="reset" data-id="${u.id}">Reset password</button>
         <button data-action="delete" data-id="${u.id}" class="btn-delete">Elimina</button>
