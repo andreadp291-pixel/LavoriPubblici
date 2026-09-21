@@ -619,7 +619,7 @@ function updateOsmSelectControls() {
   const n = osmSelections.size;
   osmSelectControls.hidden = n === 0;
   idleControls.hidden = n > 0;
-  btnOsmImportSelection.textContent = n > 1 ? `Importa ${n} elementi selezionati` : "Importa questo elemento";
+  btnOsmImportSelection.textContent = n > 1 ? `Chiudi selezione (${n} elementi)` : "Chiudi selezione";
 }
 
 function selectedPointIcon() {
