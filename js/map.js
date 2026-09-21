@@ -19,24 +19,52 @@ const OVERPASS_MIRRORS = [
   "https://overpass.openstreetmap.fr/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
 ];
-const OVERPASS_TIMEOUT_MS = 25000;
+const OVERPASS_TIMEOUT_MS = 12000;
+const OVERPASS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minuti
 
-async function fetchOverpass(query) {
-  let lastErr = null;
-  for (const url of OVERPASS_MIRRORS) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        body: "data=" + encodeURIComponent(query),
-        signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
-      });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return await res.json();
-    } catch (err) {
-      lastErr = err;
-    }
+function overpassCacheKey(query) {
+  return "osmCache_v1_" + query.replace(/\s+/g, " ").trim();
+}
+
+function readOverpassCache(query) {
+  try {
+    const raw = localStorage.getItem(overpassCacheKey(query));
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (Date.now() - ts > OVERPASS_CACHE_TTL_MS) return null;
+    return data;
+  } catch {
+    return null;
   }
-  throw lastErr || new Error("Nessun server Overpass disponibile");
+}
+
+function writeOverpassCache(query, data) {
+  try {
+    localStorage.setItem(overpassCacheKey(query), JSON.stringify({ ts: Date.now(), data }));
+  } catch {
+    // localStorage pieno o non disponibile: va bene lo stesso senza cache
+  }
+}
+
+async function fetchOneMirror(url, query) {
+  const res = await fetch(url, {
+    method: "POST",
+    body: "data=" + encodeURIComponent(query),
+    signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+// Interroga tutti i mirror in parallelo e usa il primo che risponde: molto più
+// veloce del tentare un server alla volta quando uno è lento o irraggiungibile.
+async function fetchOverpass(query) {
+  const cached = readOverpassCache(query);
+  if (cached) return cached;
+
+  const data = await Promise.any(OVERPASS_MIRRORS.map((url) => fetchOneMirror(url, query)));
+  writeOverpassCache(query, data);
+  return data;
 }
 
 const params = new URLSearchParams(window.location.search);
@@ -487,7 +515,8 @@ async function importFromOsm() {
       ? `${count} elementi OSM trovati (clicca per importare) — Nascondi`
       : `${cfg.noneLabel} — Nascondi`;
   } catch (err) {
-    alert("Errore durante la ricerca su OpenStreetMap: " + (err.message || err));
+    const msg = err && err.errors ? "nessun server OSM ha risposto in tempo" : err.message || err;
+    alert("Errore durante la ricerca su OpenStreetMap: " + msg);
     btnImportOsm.textContent = cfg.buttonLabel;
   } finally {
     btnImportOsm.disabled = false;
