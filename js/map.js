@@ -253,8 +253,9 @@ const btnLine = document.getElementById("btn-draw-line");
 const btnPolygon = document.getElementById("btn-draw-polygon");
 const btnFinish = document.getElementById("btn-draw-finish");
 const btnCancel = document.getElementById("btn-draw-cancel");
+const btnUndo = document.getElementById("btn-draw-undo");
 
-let drawing = null; // { geomType, vertices, tempLayer }
+let drawing = null; // { geomType, vertices, markers, shapeLayer, group }
 
 function setupDrawToolbar() {
   const allowed = CATEGORY_GEOM_TYPES[category];
@@ -265,22 +266,23 @@ function setupDrawToolbar() {
 }
 
 function startDrawing(geomType) {
-  drawing = { geomType, vertices: [], tempLayer: null };
+  drawing = { geomType, vertices: [], markers: [], shapeLayer: null, group: L.layerGroup().addTo(map) };
   idleControls.hidden = true;
   activeControls.hidden = false;
   btnFinish.hidden = geomType === "point";
+  btnUndo.hidden = geomType === "point";
   if (geomType === "point") {
     drawHint.textContent = "Clicca sulla mappa per posizionare il punto.";
   } else if (geomType === "line") {
-    drawHint.textContent = "Clicca per aggiungere vertici, poi 'Fine' (almeno 2 punti).";
+    drawHint.textContent = "Clicca per aggiungere vertici (trascinabili), poi 'Fine' (almeno 2 punti).";
   } else {
-    drawHint.textContent = "Clicca per aggiungere vertici, poi 'Fine' (almeno 3 punti).";
+    drawHint.textContent = "Clicca per aggiungere vertici (trascinabili), poi 'Fine' (almeno 3 punti).";
   }
 }
 
 function cancelDrawing() {
-  if (drawing && drawing.tempLayer) {
-    map.removeLayer(drawing.tempLayer);
+  if (drawing && drawing.group) {
+    map.removeLayer(drawing.group);
   }
   drawing = null;
   idleControls.hidden = false;
@@ -294,30 +296,59 @@ function finishDrawingUi() {
   activeControls.hidden = true;
 }
 
-function vertexMarker(coord) {
-  return L.circleMarker(coord, {
-    radius: 5,
-    color: "#1f5c32",
-    weight: 2,
-    fillColor: "#ffffff",
-    fillOpacity: 1,
+function makeVertexMarker(coord) {
+  const marker = L.marker(coord, {
+    draggable: true,
+    icon: L.divIcon({
+      className: "",
+      html: `<div style="width:12px;height:12px;border-radius:50%;background:#ffffff;border:2px solid #1f5c32;box-shadow:0 0 2px rgba(0,0,0,0.5);"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+    }),
   });
+  marker.on("drag", () => {
+    const ll = marker.getLatLng();
+    drawing.vertices[drawing.markers.indexOf(marker)] = [ll.lat, ll.lng];
+    redrawShape();
+  });
+  marker.on("click", (e) => {
+    L.DomEvent.stopPropagation(e);
+    const idx = drawing.markers.indexOf(marker);
+    if (idx === -1) return;
+    drawing.vertices.splice(idx, 1);
+    drawing.markers.splice(idx, 1);
+    drawing.group.removeLayer(marker);
+    redrawShape();
+  });
+  return marker;
 }
 
-function updateTempLayer() {
-  if (drawing.tempLayer) {
-    map.removeLayer(drawing.tempLayer);
+function redrawShape() {
+  if (drawing.shapeLayer) {
+    drawing.group.removeLayer(drawing.shapeLayer);
+    drawing.shapeLayer = null;
   }
-  if (drawing.vertices.length === 0) return;
   const style = { color: "#1f5c32", weight: 4, dashArray: "6 6" };
-  const group = L.layerGroup();
-  drawing.vertices.forEach((coord) => vertexMarker(coord).addTo(group));
   if (drawing.geomType === "line" && drawing.vertices.length >= 2) {
-    L.polyline(drawing.vertices, style).addTo(group);
+    drawing.shapeLayer = L.polyline(drawing.vertices, style).addTo(drawing.group);
   } else if (drawing.geomType === "polygon" && drawing.vertices.length >= 2) {
-    L.polygon(drawing.vertices, { ...style, fillOpacity: 0.2 }).addTo(group);
+    drawing.shapeLayer = L.polygon(drawing.vertices, { ...style, fillOpacity: 0.2 }).addTo(drawing.group);
   }
-  drawing.tempLayer = group.addTo(map);
+}
+
+function addVertex(coord) {
+  drawing.vertices.push(coord);
+  const marker = makeVertexMarker(coord).addTo(drawing.group);
+  drawing.markers.push(marker);
+  redrawShape();
+}
+
+function undoLastVertex() {
+  if (!drawing || drawing.vertices.length === 0) return;
+  drawing.vertices.pop();
+  const marker = drawing.markers.pop();
+  if (marker) drawing.group.removeLayer(marker);
+  redrawShape();
 }
 
 function openCreatePanel(geomType, coords) {
@@ -340,14 +371,14 @@ btnFinish.addEventListener("click", () => {
   }
   const coords = drawing.vertices;
   const geomType = drawing.geomType;
-  if (drawing.tempLayer) {
-    map.removeLayer(drawing.tempLayer);
-  }
+  map.removeLayer(drawing.group);
   drawing = null;
   idleControls.hidden = false;
   activeControls.hidden = true;
   openCreatePanel(geomType, coords);
 });
+
+btnUndo.addEventListener("click", undoLastVertex);
 
 map.on("click", (e) => {
   if (!canEdit || !drawing) return;
@@ -357,13 +388,13 @@ map.on("click", (e) => {
     const geomType = "point";
     idleControls.hidden = false;
     activeControls.hidden = true;
+    map.removeLayer(drawing.group);
     drawing = null;
     openCreatePanel(geomType, coord);
     return;
   }
 
-  drawing.vertices.push(coord);
-  updateTempLayer();
+  addVertex(coord);
 });
 
 requireAuth().then((me) => {
