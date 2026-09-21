@@ -29,6 +29,10 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+body.map-page {
+  padding-block: 12px;
+}
+
 .login-wrap {
   max-width: 360px;
   margin: 10vh auto;
@@ -185,10 +189,15 @@ button {
 
 #map {
   width: 100%;
-  height: 75vh;
-  min-height: 400px;
+  height: 65vh;
+  min-height: 340px;
   border-radius: 10px;
   border: 1px solid var(--border);
+}
+
+.leaflet-control-attribution,
+.leaflet-control-attribution a {
+  pointer-events: auto;
 }
 
 .legend {
