@@ -294,17 +294,30 @@ function finishDrawingUi() {
   activeControls.hidden = true;
 }
 
+function vertexMarker(coord) {
+  return L.circleMarker(coord, {
+    radius: 5,
+    color: "#1f5c32",
+    weight: 2,
+    fillColor: "#ffffff",
+    fillOpacity: 1,
+  });
+}
+
 function updateTempLayer() {
   if (drawing.tempLayer) {
     map.removeLayer(drawing.tempLayer);
   }
   if (drawing.vertices.length === 0) return;
   const style = { color: "#1f5c32", weight: 4, dashArray: "6 6" };
-  if (drawing.geomType === "line") {
-    drawing.tempLayer = L.polyline(drawing.vertices, style).addTo(map);
-  } else if (drawing.geomType === "polygon") {
-    drawing.tempLayer = L.polygon(drawing.vertices, { ...style, fillOpacity: 0.2 }).addTo(map);
+  const group = L.layerGroup();
+  drawing.vertices.forEach((coord) => vertexMarker(coord).addTo(group));
+  if (drawing.geomType === "line" && drawing.vertices.length >= 2) {
+    L.polyline(drawing.vertices, style).addTo(group);
+  } else if (drawing.geomType === "polygon" && drawing.vertices.length >= 2) {
+    L.polygon(drawing.vertices, { ...style, fillOpacity: 0.2 }).addTo(group);
   }
+  drawing.tempLayer = group.addTo(map);
 }
 
 function openCreatePanel(geomType, coords) {
