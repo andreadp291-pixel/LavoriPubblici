@@ -167,7 +167,14 @@ function elementCenter(element) {
 }
 
 function addElementToMap(element) {
-  const layer = buildLayer(element).addTo(map);
+  let layer = buildLayer(element);
+  if (element.geom_type === "line") {
+    // Fascia invisibile larga sopra la linea: col dito su smartphone una linea sottile
+    // è quasi impossibile da toccare con precisione.
+    const hit = L.polyline(element.geom_coords, { weight: 28, opacity: 0, lineCap: "round" });
+    layer = L.featureGroup([layer, hit]);
+  }
+  layer.addTo(map);
   layer.on("click", (e) => openPanel(element, layer, e.latlng || elementCenter(element)));
   layersById.set(element.id, { element, layer });
 }
