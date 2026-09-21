@@ -91,12 +91,47 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 let canEdit = false;
 const layersById = new Map();
 
-// Contorno del confine comunale, solo come riferimento visivo (stesso pattern di
-// CastelSafe: geometria del confine presa da Nominatim tramite la relation OSM).
+// Confine comunale: usato sia per disegnare il contorno di riferimento sia per
+// filtrare lato client i risultati OSM, cosi' siamo SEMPRE sicuri che quello che
+// viene proposto sia realmente dentro il territorio comunale (l'area() di Overpass
+// da sola non basta: se scatta il fallback sul bbox rettangolare, quel rettangolo
+// include anche zone fuori dal confine reale, che qui vengono scartate).
+let castelfrancoBoundaryRings = null; // array di anelli [[lat,lon], ...] (poligoni esterni, buchi ignorati)
+
+function ringsFromGeoJson(geojson) {
+  const rings = [];
+  const addPolygonCoords = (coords) => {
+    // coords[0] = anello esterno in formato GeoJSON [lon,lat]; ignoriamo eventuali buchi.
+    rings.push(coords[0].map(([lon, lat]) => [lat, lon]));
+  };
+  if (geojson.type === "Polygon") addPolygonCoords(geojson.coordinates);
+  else if (geojson.type === "MultiPolygon") geojson.coordinates.forEach(addPolygonCoords);
+  return rings;
+}
+
+function pointInRing(lat, lon, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [yi, xi] = ring[i];
+    const [yj, xj] = ring[j];
+    const intersect = yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// Nessun confine caricato ancora: non blocchiamo l'import (fail-open) piuttosto che
+// nascondere tutto per un fetch a Nominatim non ancora arrivato o fallito.
+function isInsideCastelfranco(lat, lon) {
+  if (!castelfrancoBoundaryRings) return true;
+  return castelfrancoBoundaryRings.some((ring) => pointInRing(lat, lon, ring));
+}
+
 fetch(`https://nominatim.openstreetmap.org/lookup?osm_type=R&osm_ids=45549&format=json&polygon_geojson=1`)
   .then((r) => r.json())
   .then((arr) => {
     if (arr && arr[0] && arr[0].geojson) {
+      castelfrancoBoundaryRings = ringsFromGeoJson(arr[0].geojson);
       L.geoJSON(arr[0].geojson, {
         style: { color: "#2e7d46", weight: 2, fillOpacity: 0, dashArray: "6 6" },
         interactive: false,
@@ -605,9 +640,13 @@ async function importFromOsm() {
 
     osmCandidatesLayer = L.layerGroup().addTo(map);
     let count = 0;
+    // Un elemento passa solo se almeno un suo punto ricade davvero dentro il confine
+    // comunale (poligono reale, non il rettangolo di bbox usato come fallback sopra).
+    const hasPointInside = (coords) => coords.some(([lat, lon]) => isInsideCastelfranco(lat, lon));
     data.elements.forEach((el) => {
       const note = cfg.tagLabel(el.tags || {});
       if (el.type === "node") {
+        if (!isInsideCastelfranco(el.lat, el.lon)) return;
         const nodeId = el.id;
         const coord = [el.lat, el.lon];
         const marker = L.marker(coord, { icon: osmCandidateStyleMarker() });
@@ -624,6 +663,7 @@ async function importFromOsm() {
       } else if (el.type === "way" && el.geometry && el.geometry.length >= 2 && cfg.wayGeom === "polygon") {
         const wayId = el.id;
         const coords = el.geometry.map((p) => [p.lat, p.lon]);
+        if (!hasPointInside(coords)) return;
         addAreaCandidate(wayId, coords, note);
         count++;
       } else if (el.type === "relation" && cfg.wayGeom === "polygon" && el.members) {
@@ -633,12 +673,14 @@ async function importFromOsm() {
           .filter((m) => m.type === "way" && m.role === "outer" && m.geometry && m.geometry.length >= 3)
           .forEach((m, i) => {
             const coords = m.geometry.map((p) => [p.lat, p.lon]);
+            if (!hasPointInside(coords)) return;
             addAreaCandidate(`${el.id}/${i}`, coords, note);
             count++;
           });
       } else if (el.type === "way" && el.geometry && el.geometry.length >= 2) {
         const wayId = el.id;
         const coords = el.geometry.map((p) => [p.lat, p.lon]);
+        if (!hasPointInside(coords)) return;
         const visible = L.polyline(coords, { color: "#8a5a2b", weight: 4, dashArray: "4 4" }).addTo(osmCandidatesLayer);
         // Linea invisibile più larga solo per facilitare il click, senza appesantire il disegno.
         const hitArea = L.polyline(coords, { color: "#000", weight: 20, opacity: 0 }).addTo(osmCandidatesLayer);
