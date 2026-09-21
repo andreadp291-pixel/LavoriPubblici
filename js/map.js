@@ -463,16 +463,19 @@ async function importFromOsm() {
       if (el.type === "node") {
         const coord = [el.lat, el.lon];
         const marker = L.marker(coord, { icon: osmCandidateStyleMarker() });
-        marker.bindTooltip(note, { direction: "top" });
         marker.on("click", () => openCreatePanel("point", coord, note));
         marker.addTo(osmCandidatesLayer);
         count++;
       } else if (el.type === "way" && el.geometry && el.geometry.length >= 2) {
         const coords = el.geometry.map((p) => [p.lat, p.lon]);
-        const line = L.polyline(coords, { color: "#8a5a2b", weight: 4, dashArray: "4 4" });
-        line.bindTooltip(note, { direction: "top" });
-        line.on("click", () => openCreatePanel("line", coords, note));
-        line.addTo(osmCandidatesLayer);
+        const visible = L.polyline(coords, { color: "#8a5a2b", weight: 4, dashArray: "4 4" }).addTo(osmCandidatesLayer);
+        // Linea invisibile più larga solo per facilitare il click, senza appesantire il disegno.
+        const hitArea = L.polyline(coords, { color: "#000", weight: 20, opacity: 0 }).addTo(osmCandidatesLayer);
+        const select = () => openCreatePanel("line", coords, note);
+        hitArea.on("click", select);
+        visible.on("click", select);
+        hitArea.on("mouseover", () => visible.setStyle({ weight: 7, color: "#c98a1f" }));
+        hitArea.on("mouseout", () => visible.setStyle({ weight: 4, color: "#8a5a2b" }));
         count++;
       }
     });
