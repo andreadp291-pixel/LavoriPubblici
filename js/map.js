@@ -509,6 +509,10 @@ const OSM_IMPORT = {
       way["leisure"="garden"](${bbox});
       way["landuse"="grass"](${bbox});
       way["landuse"="meadow"](${bbox});
+      relation["leisure"="park"](${bbox});
+      relation["leisure"="garden"](${bbox});
+      relation["landuse"="grass"](${bbox});
+      relation["landuse"="meadow"](${bbox});
     );out geom;`,
     tagLabel: (tags) => {
       const name = tags.name ? ` ${tags.name}` : "";
@@ -519,6 +523,14 @@ const OSM_IMPORT = {
     },
   },
 };
+
+function addAreaCandidate(id, coords, note) {
+  const visible = L.polygon(coords, { color: "#8a5a2b", weight: 3, dashArray: "4 4", fillColor: "#8a5a2b", fillOpacity: 0.25 }).addTo(osmCandidatesLayer);
+  const toggle = () => toggleAreaSelection(id, coords, note, visible);
+  visible.on("click", toggle);
+  visible.on("mouseover", () => { if (!osmSelections.has(id)) visible.setStyle({ weight: 5, color: "#c98a1f", fillColor: "#c98a1f", fillOpacity: 0.35 }); });
+  visible.on("mouseout", () => { if (!osmSelections.has(id)) visible.setStyle({ weight: 3, color: "#8a5a2b", fillColor: "#8a5a2b", fillOpacity: 0.25 }); });
+}
 
 function osmCandidateStyleMarker() {
   return L.divIcon({
@@ -576,12 +588,18 @@ async function importFromOsm() {
       } else if (el.type === "way" && el.geometry && el.geometry.length >= 2 && cfg.wayGeom === "polygon") {
         const wayId = el.id;
         const coords = el.geometry.map((p) => [p.lat, p.lon]);
-        const visible = L.polygon(coords, { color: "#8a5a2b", weight: 3, dashArray: "4 4", fillColor: "#8a5a2b", fillOpacity: 0.25 }).addTo(osmCandidatesLayer);
-        const toggle = () => toggleAreaSelection(wayId, coords, note, visible);
-        visible.on("click", toggle);
-        visible.on("mouseover", () => { if (!osmSelections.has(wayId)) visible.setStyle({ weight: 5, color: "#c98a1f", fillColor: "#c98a1f", fillOpacity: 0.35 }); });
-        visible.on("mouseout", () => { if (!osmSelections.has(wayId)) visible.setStyle({ weight: 3, color: "#8a5a2b", fillColor: "#8a5a2b", fillOpacity: 0.25 }); });
+        addAreaCandidate(wayId, coords, note);
         count++;
+      } else if (el.type === "relation" && cfg.wayGeom === "polygon" && el.members) {
+        // Molti parchi grandi sono mappati come relation multipoligono: prendiamo i
+        // member "outer" (i contorni esterni) e li trattiamo come aree separate.
+        el.members
+          .filter((m) => m.type === "way" && m.role === "outer" && m.geometry && m.geometry.length >= 3)
+          .forEach((m, i) => {
+            const coords = m.geometry.map((p) => [p.lat, p.lon]);
+            addAreaCandidate(`${el.id}/${i}`, coords, note);
+            count++;
+          });
       } else if (el.type === "way" && el.geometry && el.geometry.length >= 2) {
         const wayId = el.id;
         const coords = el.geometry.map((p) => [p.lat, p.lon]);
