@@ -181,16 +181,25 @@ function buildPopupHtml() {
     </div>`;
 }
 
+// Cerca i campi SOLO dentro il contenitore del popup corrente (mai document.getElementById):
+// più popup possono transitare nel DOM in sequenza ravvicinata e gli id non sono univoci
+// a livello di intero documento, quindi una ricerca globale rischia di pescare i campi
+// di un popup precedente non ancora rimosso, mischiando le note tra un elemento e l'altro.
+function panelField(id) {
+  const container = panelState && panelState.popup && panelState.popup.getElement();
+  return container ? container.querySelector("#" + id) : null;
+}
+
 function applyPanelMode() {
   const isNew = panelState.element.id === undefined;
   const editing = panelState.editing;
 
-  const note = document.getElementById("popup-note");
-  const programmata = document.getElementById("popup-programmata");
-  const ultima = document.getElementById("popup-ultima");
-  const editBtn = document.getElementById("popup-edit");
-  const saveBtn = document.getElementById("popup-save");
-  const deleteBtn = document.getElementById("popup-delete");
+  const note = panelField("popup-note");
+  const programmata = panelField("popup-programmata");
+  const ultima = panelField("popup-ultima");
+  const editBtn = panelField("popup-edit");
+  const saveBtn = panelField("popup-save");
+  const deleteBtn = panelField("popup-delete");
   if (!note) return;
 
   note.disabled = !editing;
@@ -203,13 +212,13 @@ function applyPanelMode() {
 }
 
 function wirePopupHandlers() {
-  const note = document.getElementById("popup-note");
-  const programmata = document.getElementById("popup-programmata");
-  const ultima = document.getElementById("popup-ultima");
-  const error = document.getElementById("popup-error");
-  const editBtn = document.getElementById("popup-edit");
-  const saveBtn = document.getElementById("popup-save");
-  const deleteBtn = document.getElementById("popup-delete");
+  const note = panelField("popup-note");
+  const programmata = panelField("popup-programmata");
+  const ultima = panelField("popup-ultima");
+  const error = panelField("popup-error");
+  const editBtn = panelField("popup-edit");
+  const saveBtn = panelField("popup-save");
+  const deleteBtn = panelField("popup-delete");
   if (!note) return;
 
   note.value = panelState.element.note || "";
