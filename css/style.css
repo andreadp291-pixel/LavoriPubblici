@@ -491,3 +491,29 @@ button {
   background: #f3e6e6;
   color: var(--danger);
 }
+
+.pw-field {
+  position: relative;
+}
+
+.pw-field input {
+  padding-right: 44px;
+}
+
+.pw-toggle {
+  position: absolute;
+  right: 6px;
+  top: 0;
+  height: 42px;
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
+
+.pw-toggle.active {
+  color: var(--accent);
+}
