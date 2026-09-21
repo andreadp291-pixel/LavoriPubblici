@@ -491,12 +491,31 @@ const OSM_IMPORT = {
   asfaltature: {
     buttonLabel: "Importa strade da OSM",
     noneLabel: "Nessuna strada OSM trovata qui",
+    wayGeom: "line",
     buildQuery: (bbox) => `[out:json][timeout:25];(
       way["highway"]["highway"!="proposed"]["highway"!="construction"](${bbox});
     );out geom;`,
     tagLabel: (tags) => {
       const name = tags.name ? ` ${tags.name}` : "";
       return `Strada${name} (OSM)`;
+    },
+  },
+  sfalci: {
+    buttonLabel: "Importa prati/parchi da OSM",
+    noneLabel: "Nessun prato/parco OSM trovato qui",
+    wayGeom: "polygon",
+    buildQuery: (bbox) => `[out:json][timeout:25];(
+      way["leisure"="park"](${bbox});
+      way["leisure"="garden"](${bbox});
+      way["landuse"="grass"](${bbox});
+      way["landuse"="meadow"](${bbox});
+    );out geom;`,
+    tagLabel: (tags) => {
+      const name = tags.name ? ` ${tags.name}` : "";
+      if (tags.leisure === "park") return `Parco${name} (OSM)`;
+      if (tags.leisure === "garden") return `Giardino${name} (OSM)`;
+      if (tags.landuse === "meadow") return `Prato${name} (OSM)`;
+      return `Area verde${name} (OSM)`;
     },
   },
 };
@@ -553,6 +572,15 @@ async function importFromOsm() {
         hitArea.on("mouseout", () => { if (!osmSelections.has(nodeId)) marker.setOpacity(1); });
         marker.addTo(osmCandidatesLayer);
         hitArea.addTo(osmCandidatesLayer);
+        count++;
+      } else if (el.type === "way" && el.geometry && el.geometry.length >= 2 && cfg.wayGeom === "polygon") {
+        const wayId = el.id;
+        const coords = el.geometry.map((p) => [p.lat, p.lon]);
+        const visible = L.polygon(coords, { color: "#8a5a2b", weight: 3, dashArray: "4 4", fillColor: "#8a5a2b", fillOpacity: 0.25 }).addTo(osmCandidatesLayer);
+        const toggle = () => toggleAreaSelection(wayId, coords, note, visible);
+        visible.on("click", toggle);
+        visible.on("mouseover", () => { if (!osmSelections.has(wayId)) visible.setStyle({ weight: 5, color: "#c98a1f", fillColor: "#c98a1f", fillOpacity: 0.35 }); });
+        visible.on("mouseout", () => { if (!osmSelections.has(wayId)) visible.setStyle({ weight: 3, color: "#8a5a2b", fillColor: "#8a5a2b", fillOpacity: 0.25 }); });
         count++;
       } else if (el.type === "way" && el.geometry && el.geometry.length >= 2) {
         const wayId = el.id;
@@ -683,6 +711,16 @@ function togglePointSelection(nodeId, coord, note, marker) {
   updateOsmSelectControls();
 }
 
+function toggleAreaSelection(wayId, coords, note, visible) {
+  if (osmSelections.has(wayId)) {
+    deselectOsmEntry(wayId);
+    return;
+  }
+  visible.setStyle({ weight: 5, color: "#c98a1f", fillColor: "#c98a1f", fillOpacity: 0.4 });
+  osmSelections.set(wayId, { type: "area", coords, note, visible });
+  updateOsmSelectControls();
+}
+
 function toggleOsmSelection(wayId, coords, note, sourceVisible) {
   if (osmSelections.has(wayId)) {
     deselectOsmEntry(wayId);
@@ -728,6 +766,8 @@ function deselectOsmEntry(id) {
   if (!s) return;
   if (s.type === "point") {
     s.marker.setIcon(osmCandidateStyleMarker());
+  } else if (s.type === "area") {
+    s.visible.setStyle({ weight: 3, color: "#8a5a2b", fillColor: "#8a5a2b", fillOpacity: 0.25 });
   } else {
     if (s.startMarker) osmCandidatesLayer.removeLayer(s.startMarker);
     if (s.endMarker) osmCandidatesLayer.removeLayer(s.endMarker);
@@ -744,11 +784,11 @@ function clearOsmSelection() {
 
 btnOsmCancelSelection.addEventListener("click", clearOsmSelection);
 btnOsmImportSelection.addEventListener("click", () => {
-  const entries = Array.from(osmSelections.values()).map((s) =>
-    s.type === "point"
-      ? { geomType: "point", coords: s.coord, note: s.note }
-      : { geomType: "line", coords: trimLineCoords(s.coords, s.cum, s.startDist, s.endDist), note: s.note }
-  );
+  const entries = Array.from(osmSelections.values()).map((s) => {
+    if (s.type === "point") return { geomType: "point", coords: s.coord, note: s.note };
+    if (s.type === "area") return { geomType: "polygon", coords: s.coords, note: s.note };
+    return { geomType: "line", coords: trimLineCoords(s.coords, s.cum, s.startDist, s.endDist), note: s.note };
+  });
   if (entries.length === 0) return;
   clearOsmSelection();
   openBulkPanel(entries);
