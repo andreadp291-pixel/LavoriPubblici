@@ -19,7 +19,10 @@ const OVERPASS_MIRRORS = [
   "https://overpass.openstreetmap.fr/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
 ];
-const OVERPASS_TIMEOUT_MS = 12000;
+// Le query sull'intera area comunale (non più su un piccolo bbox di vista) impiegano
+// piu' tempo, soprattutto la prima volta che Overpass calcola l'area dalla relation:
+// serve un timeout piu' lungo di quello usato per le query sul solo riquadro visibile.
+const OVERPASS_TIMEOUT_MS = 30000;
 const OVERPASS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minuti
 
 function overpassCacheKey(query) {
@@ -494,15 +497,24 @@ const CASTELFRANCO_AREA_SETUP = `area(${CASTELFRANCO_AREA_ID})->.cf;`;
 // Configurazione dell'import per categoria: query Overpass e etichette risultanti.
 // Tutte le query sono filtrate sull'area amministrativa del comune (non su un bbox
 // rettangolare), cosi' non vengono proposti elementi fuori dal territorio comunale.
+function buildAreaOrBboxQuery(clauses, useArea, bbox) {
+  const filter = useArea ? "(area.cf)" : `(${bbox})`;
+  const setup = useArea ? CASTELFRANCO_AREA_SETUP : "";
+  const body = clauses.map((c) => c.replace("%F%", filter)).join("\n      ");
+  return `[out:json][timeout:28];${setup}(
+      ${body}
+    );out geom;`;
+}
+
 const OSM_IMPORT = {
   potature: {
     buttonLabel: "Importa alberi/siepi da OSM",
     noneLabel: "Nessun albero/siepe OSM trovato qui",
-    buildQuery: () => `[out:json][timeout:25];${CASTELFRANCO_AREA_SETUP}(
-      node["natural"="tree"](area.cf);
-      way["natural"="tree_row"](area.cf);
-      way["barrier"="hedge"](area.cf);
-    );out geom;`,
+    clauses: [
+      'node["natural"="tree"]%F%;',
+      'way["natural"="tree_row"]%F%;',
+      'way["barrier"="hedge"]%F%;',
+    ],
     tagLabel: (tags) => {
       if (tags.natural === "tree") return "Albero (OSM)";
       if (tags.natural === "tree_row") return "Filare di alberi (OSM)";
@@ -514,9 +526,7 @@ const OSM_IMPORT = {
     buttonLabel: "Importa strade da OSM",
     noneLabel: "Nessuna strada OSM trovata qui",
     wayGeom: "line",
-    buildQuery: () => `[out:json][timeout:25];${CASTELFRANCO_AREA_SETUP}(
-      way["highway"]["highway"!="proposed"]["highway"!="construction"](area.cf);
-    );out geom;`,
+    clauses: ['way["highway"]["highway"!="proposed"]["highway"!="construction"]%F%;'],
     tagLabel: (tags) => {
       const name = tags.name ? ` ${tags.name}` : "";
       return `Strada${name} (OSM)`;
@@ -526,16 +536,16 @@ const OSM_IMPORT = {
     buttonLabel: "Importa prati/parchi da OSM",
     noneLabel: "Nessun prato/parco OSM trovato qui",
     wayGeom: "polygon",
-    buildQuery: () => `[out:json][timeout:25];${CASTELFRANCO_AREA_SETUP}(
-      way["leisure"="park"](area.cf);
-      way["leisure"="garden"](area.cf);
-      way["landuse"="grass"](area.cf);
-      way["landuse"="meadow"](area.cf);
-      relation["leisure"="park"](area.cf);
-      relation["leisure"="garden"](area.cf);
-      relation["landuse"="grass"](area.cf);
-      relation["landuse"="meadow"](area.cf);
-    );out geom;`,
+    clauses: [
+      'way["leisure"="park"]%F%;',
+      'way["leisure"="garden"]%F%;',
+      'way["landuse"="grass"]%F%;',
+      'way["landuse"="meadow"]%F%;',
+      'relation["leisure"="park"]%F%;',
+      'relation["leisure"="garden"]%F%;',
+      'relation["landuse"="grass"]%F%;',
+      'relation["landuse"="meadow"]%F%;',
+    ],
     tagLabel: (tags) => {
       const name = tags.name ? ` ${tags.name}` : "";
       if (tags.leisure === "park") return `Parco${name} (OSM)`;
@@ -580,12 +590,18 @@ async function importFromOsm() {
     clearOsmCandidates();
     return;
   }
-  const query = cfg.buildQuery();
-
   btnImportOsm.disabled = true;
   btnImportOsm.textContent = "Ricerca su OSM in corso...";
   try {
-    const data = await fetchOverpass(query);
+    // Prima cerca sull'intera area comunale; se non trova nulla (es. area() non
+    // disponibile su qualche mirror) riprova sul riquadro della vista corrente,
+    // cosi' l'utente ottiene comunque un risultato utile.
+    let data = await fetchOverpass(buildAreaOrBboxQuery(cfg.clauses, true));
+    if (!data.elements || data.elements.length === 0) {
+      const b = map.getBounds();
+      const bbox = `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}`;
+      data = await fetchOverpass(buildAreaOrBboxQuery(cfg.clauses, false, bbox));
+    }
 
     osmCandidatesLayer = L.layerGroup().addTo(map);
     let count = 0;
