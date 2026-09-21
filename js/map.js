@@ -91,60 +91,31 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 let canEdit = false;
 const layersById = new Map();
 
-// Confine comunale: usato sia per disegnare il contorno di riferimento sia per
-// filtrare lato client i risultati OSM, cosi' siamo SEMPRE sicuri che quello che
-// viene proposto sia realmente dentro il territorio comunale (l'area() di Overpass
-// da sola non basta: se scatta il fallback sul bbox rettangolare, quel rettangolo
-// include anche zone fuori dal confine reale, che qui vengono scartate).
-let castelfrancoBoundaryRings = null; // array di anelli [[lat,lon], ...] (poligoni esterni, buchi ignorati)
+// Confine comunale di Castelfranco Veneto (OSM relation 45549), semplificato a 195
+// vertici — stessa costante usata in CastelfrancoStreets. È incorporato direttamente
+// nel codice (non scaricato da Nominatim ad ogni caricamento pagina): un fetch
+// runtime introduce un punto di fallimento in più senza alcun bisogno, dato che il
+// confine amministrativo non cambia.
+const CASTELFRANCO_BOUNDARY = [[45.66879,11.86777],[45.66731,11.86807],[45.66648,11.87335],[45.66632,11.88088],[45.66283,11.88174],[45.66290,11.88312],[45.65884,11.88454],[45.65885,11.88731],[45.65639,11.88740],[45.65451,11.88943],[45.65425,11.88590],[45.64953,11.88688],[45.64826,11.88754],[45.64726,11.88896],[45.64522,11.89009],[45.63847,11.89155],[45.63369,11.89321],[45.63197,11.89517],[45.63028,11.89550],[45.62997,11.89421],[45.63258,11.89235],[45.63310,11.88949],[45.63237,11.88927],[45.63050,11.89040],[45.62993,11.89021],[45.62833,11.89242],[45.62774,11.89085],[45.62656,11.89194],[45.62585,11.88999],[45.61954,11.89441],[45.61306,11.89821],[45.61434,11.89961],[45.61685,11.90119],[45.61847,11.90126],[45.62414,11.90010],[45.62535,11.89935],[45.62641,11.89779],[45.62751,11.89768],[45.62837,11.90153],[45.62767,11.90174],[45.62722,11.90419],[45.62591,11.90603],[45.62613,11.90696],[45.62553,11.90793],[45.62501,11.90740],[45.62456,11.90771],[45.62308,11.91093],[45.62227,11.91074],[45.62081,11.91135],[45.61925,11.91320],[45.61867,11.91716],[45.61974,11.91689],[45.62182,11.91777],[45.62103,11.92252],[45.61889,11.92752],[45.62147,11.92712],[45.62224,11.92837],[45.62259,11.92604],[45.62546,11.92421],[45.62877,11.92616],[45.63052,11.92859],[45.63127,11.92895],[45.63249,11.92920],[45.63417,11.92846],[45.63602,11.92844],[45.63713,11.92751],[45.63885,11.92715],[45.64830,11.93232],[45.64804,11.93415],[45.64759,11.93424],[45.64736,11.93855],[45.64685,11.93901],[45.64771,11.94535],[45.65111,11.94244],[45.65107,11.94371],[45.65029,11.95069],[45.64768,11.95054],[45.64756,11.95362],[45.64685,11.95722],[45.64466,11.95666],[45.64445,11.96199],[45.64233,11.96208],[45.64198,11.96481],[45.64106,11.96535],[45.64111,11.96620],[45.64052,11.96628],[45.64055,11.96881],[45.64240,11.96624],[45.64690,11.96505],[45.64702,11.96552],[45.64817,11.96554],[45.64819,11.96638],[45.64963,11.96642],[45.65017,11.96637],[45.65042,11.96542],[45.65099,11.96546],[45.65138,11.96822],[45.65315,11.96724],[45.65312,11.96664],[45.65473,11.96638],[45.65442,11.96883],[45.65448,11.96924],[45.65500,11.96916],[45.65539,11.97188],[45.65682,11.97204],[45.65830,11.97152],[45.65908,11.97508],[45.66150,11.97457],[45.66183,11.97371],[45.66391,11.97328],[45.66424,11.97620],[45.66298,11.97647],[45.66303,11.97832],[45.66126,11.97877],[45.66126,11.97937],[45.66005,11.97966],[45.66055,11.98316],[45.66074,11.98373],[45.66116,11.98367],[45.66166,11.98635],[45.66232,11.98722],[45.66445,11.99708],[45.67009,11.99641],[45.68567,11.99175],[45.68706,11.99310],[45.68804,11.99284],[45.68870,11.99406],[45.68967,11.99381],[45.68988,11.99414],[45.69428,11.99294],[45.69559,11.98774],[45.69998,11.97791],[45.70060,11.97200],[45.70185,11.96605],[45.70464,11.96100],[45.70563,11.95794],[45.70786,11.95362],[45.70730,11.95270],[45.70617,11.94342],[45.70400,11.94397],[45.70389,11.94283],[45.70253,11.94322],[45.70229,11.94211],[45.69830,11.94318],[45.69773,11.94220],[45.69735,11.94231],[45.69664,11.93913],[45.69501,11.93976],[45.69437,11.93685],[45.69350,11.93714],[45.69327,11.93582],[45.68939,11.93677],[45.68824,11.92899],[45.69061,11.92813],[45.69084,11.92756],[45.69462,11.92757],[45.69541,11.92451],[45.69709,11.92441],[45.69709,11.92155],[45.69893,11.92150],[45.69799,11.90990],[45.69879,11.90850],[45.69840,11.90671],[45.69657,11.90684],[45.69641,11.90605],[45.69513,11.90660],[45.69523,11.90728],[45.69266,11.90793],[45.69198,11.90885],[45.69014,11.90947],[45.69028,11.91116],[45.68912,11.91245],[45.68877,11.90975],[45.68698,11.91054],[45.68695,11.90941],[45.68646,11.90945],[45.68627,11.90881],[45.68625,11.90583],[45.68567,11.90596],[45.68539,11.90319],[45.68491,11.90329],[45.68492,11.90063],[45.68407,11.90070],[45.68351,11.89879],[45.68491,11.89472],[45.68313,11.89511],[45.68237,11.89060],[45.68040,11.89197],[45.67791,11.89281],[45.67696,11.88705],[45.67490,11.88646],[45.67367,11.88696],[45.67330,11.88453],[45.67187,11.88491],[45.66879,11.86777]];
 
-function ringsFromGeoJson(geojson) {
-  const rings = [];
-  const addPolygonCoords = (coords) => {
-    // coords[0] = anello esterno in formato GeoJSON [lon,lat]; ignoriamo eventuali buchi.
-    rings.push(coords[0].map(([lon, lat]) => [lat, lon]));
-  };
-  if (geojson.type === "Polygon") addPolygonCoords(geojson.coordinates);
-  else if (geojson.type === "MultiPolygon") geojson.coordinates.forEach(addPolygonCoords);
-  return rings;
-}
-
-function pointInRing(lat, lon, ring) {
+function isInsideCastelfranco(lat, lon) {
   let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [yi, xi] = ring[i];
-    const [yj, xj] = ring[j];
+  for (let i = 0, j = CASTELFRANCO_BOUNDARY.length - 1; i < CASTELFRANCO_BOUNDARY.length; j = i++) {
+    const [yi, xi] = CASTELFRANCO_BOUNDARY[i];
+    const [yj, xj] = CASTELFRANCO_BOUNDARY[j];
     const intersect = yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
 }
 
-// In condizioni normali il confine è già stato atteso (castelfrancoBoundaryReady)
-// prima di chiamare questa funzione; il fail-open resta solo come ultima difesa.
-function isInsideCastelfranco(lat, lon) {
-  if (!castelfrancoBoundaryRings) return true;
-  return castelfrancoBoundaryRings.some((ring) => pointInRing(lat, lon, ring));
-}
-
-// Promise attesa da importFromOsm PRIMA di filtrare: se non aspettassimo questo fetch,
-// un import lanciato subito dopo il caricamento pagina troverebbe castelfrancoBoundaryRings
-// ancora null e il filtro (fail-open per non nascondere tutto per un attimo) lascerebbe
-// passare qualunque cosa, vanificando la restrizione al confine comunale.
-const castelfrancoBoundaryReady = fetch(
-  `https://nominatim.openstreetmap.org/lookup?osm_type=R&osm_ids=45549&format=json&polygon_geojson=1`
-)
-  .then((r) => r.json())
-  .then((arr) => {
-    if (arr && arr[0] && arr[0].geojson) {
-      castelfrancoBoundaryRings = ringsFromGeoJson(arr[0].geojson);
-      L.geoJSON(arr[0].geojson, {
-        style: { color: "#2e7d46", weight: 2, fillOpacity: 0, dashArray: "6 6" },
-        interactive: false,
-      }).addTo(map);
-    }
-  })
-  .catch(() => {});
+L.polygon(CASTELFRANCO_BOUNDARY, {
+  color: "#2e7d46",
+  weight: 2,
+  fillOpacity: 0,
+  dashArray: "6 6",
+  interactive: false,
+}).addTo(map);
 
 // ── Scala colore in base a quanto tempo fa è stato eseguito il lavoro ──
 function colorForLastDone(dateStr) {
@@ -632,21 +603,12 @@ async function importFromOsm() {
     return;
   }
   btnImportOsm.disabled = true;
-  btnImportOsm.textContent = "Attendo il confine comunale...";
-  await castelfrancoBoundaryReady;
-  if (!castelfrancoBoundaryRings) {
-    alert("Non riesco a scaricare il confine comunale da OpenStreetMap in questo momento: riprova tra poco.");
-    btnImportOsm.disabled = false;
-    btnImportOsm.textContent = cfg.buttonLabel;
-    return;
-  }
-
   btnImportOsm.textContent = "Ricerca su OSM in corso...";
   try {
     // Prima cerca sull'intera area comunale; se non trova nulla (es. area() non
     // disponibile su qualche mirror) riprova sul riquadro della vista corrente,
-    // cosi' l'utente ottiene comunque un risultato utile. Il confine reale (gia'
-    // caricato sopra) filtra comunque entrambi i casi.
+    // cosi' l'utente ottiene comunque un risultato utile. Il confine reale (costante
+    // incorporata, nessun fetch di rete) filtra comunque entrambi i casi.
     let data = await fetchOverpass(buildAreaOrBboxQuery(cfg.clauses, true));
     if (!data.elements || data.elements.length === 0) {
       const b = map.getBounds();
