@@ -88,6 +88,20 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 let canEdit = false;
 const layersById = new Map();
 
+// Contorno del confine comunale, solo come riferimento visivo (stesso pattern di
+// CastelSafe: geometria del confine presa da Nominatim tramite la relation OSM).
+fetch(`https://nominatim.openstreetmap.org/lookup?osm_type=R&osm_ids=45549&format=json&polygon_geojson=1`)
+  .then((r) => r.json())
+  .then((arr) => {
+    if (arr && arr[0] && arr[0].geojson) {
+      L.geoJSON(arr[0].geojson, {
+        style: { color: "#2e7d46", weight: 2, fillOpacity: 0, dashArray: "6 6" },
+        interactive: false,
+      }).addTo(map);
+    }
+  })
+  .catch(() => {});
+
 // ── Scala colore in base a quanto tempo fa è stato eseguito il lavoro ──
 function colorForLastDone(dateStr) {
   if (!dateStr) return "#555555"; // mai eseguito
@@ -471,15 +485,23 @@ function openCreatePanel(geomType, coords, note) {
 // ── Import da OpenStreetMap (Overpass API) ──
 let osmCandidatesLayer = null;
 
+// ID della relation OSM del comune di Castelfranco Veneto (stesso usato da CastelSafe/
+// CastelfrancoStreets). L'area-id per Overpass è 3600000000 + id relation.
+const CASTELFRANCO_RELATION_ID = 45549;
+const CASTELFRANCO_AREA_ID = 3600000000 + CASTELFRANCO_RELATION_ID;
+const CASTELFRANCO_AREA_SETUP = `area(${CASTELFRANCO_AREA_ID})->.cf;`;
+
 // Configurazione dell'import per categoria: query Overpass e etichette risultanti.
+// Tutte le query sono filtrate sull'area amministrativa del comune (non su un bbox
+// rettangolare), cosi' non vengono proposti elementi fuori dal territorio comunale.
 const OSM_IMPORT = {
   potature: {
     buttonLabel: "Importa alberi/siepi da OSM",
     noneLabel: "Nessun albero/siepe OSM trovato qui",
-    buildQuery: (bbox) => `[out:json][timeout:25];(
-      node["natural"="tree"](${bbox});
-      way["natural"="tree_row"](${bbox});
-      way["barrier"="hedge"](${bbox});
+    buildQuery: () => `[out:json][timeout:25];${CASTELFRANCO_AREA_SETUP}(
+      node["natural"="tree"](area.cf);
+      way["natural"="tree_row"](area.cf);
+      way["barrier"="hedge"](area.cf);
     );out geom;`,
     tagLabel: (tags) => {
       if (tags.natural === "tree") return "Albero (OSM)";
@@ -492,8 +514,8 @@ const OSM_IMPORT = {
     buttonLabel: "Importa strade da OSM",
     noneLabel: "Nessuna strada OSM trovata qui",
     wayGeom: "line",
-    buildQuery: (bbox) => `[out:json][timeout:25];(
-      way["highway"]["highway"!="proposed"]["highway"!="construction"](${bbox});
+    buildQuery: () => `[out:json][timeout:25];${CASTELFRANCO_AREA_SETUP}(
+      way["highway"]["highway"!="proposed"]["highway"!="construction"](area.cf);
     );out geom;`,
     tagLabel: (tags) => {
       const name = tags.name ? ` ${tags.name}` : "";
@@ -504,15 +526,15 @@ const OSM_IMPORT = {
     buttonLabel: "Importa prati/parchi da OSM",
     noneLabel: "Nessun prato/parco OSM trovato qui",
     wayGeom: "polygon",
-    buildQuery: (bbox) => `[out:json][timeout:25];(
-      way["leisure"="park"](${bbox});
-      way["leisure"="garden"](${bbox});
-      way["landuse"="grass"](${bbox});
-      way["landuse"="meadow"](${bbox});
-      relation["leisure"="park"](${bbox});
-      relation["leisure"="garden"](${bbox});
-      relation["landuse"="grass"](${bbox});
-      relation["landuse"="meadow"](${bbox});
+    buildQuery: () => `[out:json][timeout:25];${CASTELFRANCO_AREA_SETUP}(
+      way["leisure"="park"](area.cf);
+      way["leisure"="garden"](area.cf);
+      way["landuse"="grass"](area.cf);
+      way["landuse"="meadow"](area.cf);
+      relation["leisure"="park"](area.cf);
+      relation["leisure"="garden"](area.cf);
+      relation["landuse"="grass"](area.cf);
+      relation["landuse"="meadow"](area.cf);
     );out geom;`,
     tagLabel: (tags) => {
       const name = tags.name ? ` ${tags.name}` : "";
@@ -558,9 +580,7 @@ async function importFromOsm() {
     clearOsmCandidates();
     return;
   }
-  const b = map.getBounds();
-  const bbox = `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}`;
-  const query = cfg.buildQuery(bbox);
+  const query = cfg.buildQuery();
 
   btnImportOsm.disabled = true;
   btnImportOsm.textContent = "Ricerca su OSM in corso...";
