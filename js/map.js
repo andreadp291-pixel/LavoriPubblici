@@ -13,6 +13,32 @@ const CATEGORY_GEOM_TYPES = {
 
 const GEOM_LABELS = { point: "Punto", line: "Linea", polygon: "Area" };
 
+// ── Import da OpenStreetMap (Overpass API), come in CastelfrancoStreets ──
+const OVERPASS_MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.openstreetmap.fr/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+];
+const OVERPASS_TIMEOUT_MS = 25000;
+
+async function fetchOverpass(query) {
+  let lastErr = null;
+  for (const url of OVERPASS_MIRRORS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        body: "data=" + encodeURIComponent(query),
+        signal: AbortSignal.timeout(OVERPASS_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.json();
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error("Nessun server Overpass disponibile");
+}
+
 const params = new URLSearchParams(window.location.search);
 const category = params.get("cat");
 
@@ -254,6 +280,7 @@ const btnPolygon = document.getElementById("btn-draw-polygon");
 const btnFinish = document.getElementById("btn-draw-finish");
 const btnCancel = document.getElementById("btn-draw-cancel");
 const btnUndo = document.getElementById("btn-draw-undo");
+const btnImportOsm = document.getElementById("btn-import-osm");
 
 let drawing = null; // { geomType, vertices, markers, shapeLayer, group }
 
@@ -262,8 +289,11 @@ function setupDrawToolbar() {
   btnPoint.hidden = !allowed.includes("point");
   btnLine.hidden = !allowed.includes("line");
   btnPolygon.hidden = !allowed.includes("polygon");
+  btnImportOsm.hidden = category !== "potature";
   toolbar.hidden = false;
 }
+
+btnImportOsm.addEventListener("click", importFromOsm);
 
 function startDrawing(geomType) {
   drawing = { geomType, vertices: [], markers: [], shapeLayer: null, group: L.layerGroup().addTo(map) };
@@ -351,10 +381,87 @@ function undoLastVertex() {
   redrawShape();
 }
 
-function openCreatePanel(geomType, coords) {
-  const fakeElement = { id: undefined, geom_type: geomType, geom_coords: coords, note: "", data_programmata: null, data_ultima_esecuzione: null };
+function openCreatePanel(geomType, coords, note) {
+  const fakeElement = { id: undefined, geom_type: geomType, geom_coords: coords, note: note || "", data_programmata: null, data_ultima_esecuzione: null };
   const layer = buildLayer(fakeElement).addTo(map);
   openPanel(fakeElement, layer, elementCenter(fakeElement));
+}
+
+// ── Import alberi/siepi da OpenStreetMap (Overpass API) ──
+let osmCandidatesLayer = null;
+
+function osmTagLabel(tags) {
+  if (tags.natural === "tree") return "Albero (OSM)";
+  if (tags.natural === "tree_row") return "Filare di alberi (OSM)";
+  if (tags.barrier === "hedge") return "Siepe (OSM)";
+  return "Elemento OSM";
+}
+
+function osmCandidateStyleMarker() {
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:#8a5a2b;border:2px solid white;box-shadow:0 0 3px rgba(0,0,0,0.4);"></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
+function clearOsmCandidates() {
+  if (osmCandidatesLayer) {
+    map.removeLayer(osmCandidatesLayer);
+    osmCandidatesLayer = null;
+  }
+  btnImportOsm.textContent = "Importa alberi/siepi da OSM";
+}
+
+async function importFromOsm() {
+  if (osmCandidatesLayer) {
+    clearOsmCandidates();
+    return;
+  }
+  const b = map.getBounds();
+  const bbox = `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}`;
+  const query = `[out:json][timeout:25];(
+    node["natural"="tree"](${bbox});
+    way["natural"="tree_row"](${bbox});
+    way["barrier"="hedge"](${bbox});
+  );out geom;`;
+
+  btnImportOsm.disabled = true;
+  btnImportOsm.textContent = "Ricerca su OSM in corso...";
+  try {
+    const data = await fetchOverpass(query);
+
+    osmCandidatesLayer = L.layerGroup().addTo(map);
+    let count = 0;
+    data.elements.forEach((el) => {
+      const note = osmTagLabel(el.tags || {});
+      if (el.type === "node") {
+        const coord = [el.lat, el.lon];
+        const marker = L.marker(coord, { icon: osmCandidateStyleMarker() });
+        marker.bindTooltip(note, { direction: "top" });
+        marker.on("click", () => openCreatePanel("point", coord, note));
+        marker.addTo(osmCandidatesLayer);
+        count++;
+      } else if (el.type === "way" && el.geometry && el.geometry.length >= 2) {
+        const coords = el.geometry.map((p) => [p.lat, p.lon]);
+        const line = L.polyline(coords, { color: "#8a5a2b", weight: 4, dashArray: "4 4" });
+        line.bindTooltip(note, { direction: "top" });
+        line.on("click", () => openCreatePanel("line", coords, note));
+        line.addTo(osmCandidatesLayer);
+        count++;
+      }
+    });
+
+    btnImportOsm.textContent = count > 0
+      ? `${count} elementi OSM trovati (clicca per importare) — Nascondi`
+      : "Nessun albero/siepe OSM trovato qui — Nascondi";
+  } catch (err) {
+    alert("Errore durante la ricerca su OpenStreetMap: " + (err.message || err));
+    btnImportOsm.textContent = "Importa alberi/siepi da OSM";
+  } finally {
+    btnImportOsm.disabled = false;
+  }
 }
 
 btnPoint.addEventListener("click", () => startDrawing("point"));
