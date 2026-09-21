@@ -163,9 +163,14 @@ async function loadElements() {
 let panelState = null; // { element, layer, editing, popup }
 
 function buildPopupHtml() {
+  const title = panelState.bulkEntries
+    ? panelState.bulkEntries.length > 1
+      ? `${panelState.bulkEntries.length} elementi selezionati — ${CATEGORY_LABELS[category]}`
+      : `${GEOM_LABELS[panelState.bulkEntries[0].geomType]} da OSM — ${CATEGORY_LABELS[category]}`
+    : `${GEOM_LABELS[panelState.element.geom_type]} — ${CATEGORY_LABELS[category]}`;
   return `
     <div class="popup-form">
-      <h2 class="popup-title">${GEOM_LABELS[panelState.element.geom_type]} — ${CATEGORY_LABELS[category]}</h2>
+      <h2 class="popup-title">${title}</h2>
       <label>Nota</label>
       <textarea id="popup-note"></textarea>
       <label>Programmato per il</label>
@@ -239,7 +244,22 @@ function wirePopupHandlers() {
     const data_ultima_esecuzione = ultima.value || null;
 
     try {
-      if (panelState.element.id === undefined) {
+      if (panelState.bulkEntries) {
+        for (const entry of panelState.bulkEntries) {
+          const created = await apiFetch("/api/points", {
+            method: "POST",
+            body: JSON.stringify({
+              category,
+              geom_type: entry.geomType,
+              geom_coords: entry.coords,
+              note: noteVal,
+              data_programmata,
+              data_ultima_esecuzione,
+            }),
+          });
+          addElementToMap(created);
+        }
+      } else if (panelState.element.id === undefined) {
         const created = await apiFetch("/api/points", {
           method: "POST",
           body: JSON.stringify({
@@ -291,6 +311,26 @@ function openPanel(element, layer, latlng) {
   wirePopupHandlers();
 }
 
+// Apre un'unica card per più candidati OSM selezionati insieme: nota e date inserite
+// una sola volta vengono applicate a tutti gli elementi al salvataggio.
+function openBulkPanel(entries) {
+  const bulkElement = {
+    id: undefined,
+    geom_type: entries[0].geomType,
+    geom_coords: entries[0].coords,
+    note: "",
+    data_programmata: null,
+    data_ultima_esecuzione: null,
+  };
+  panelState = { element: bulkElement, layer: null, editing: true, bulkEntries: entries };
+  const popup = L.popup({ closeButton: true, minWidth: 200, maxWidth: 240, autoPan: true })
+    .setLatLng(elementCenter(bulkElement))
+    .setContent(buildPopupHtml())
+    .openOn(map);
+  panelState.popup = popup;
+  wirePopupHandlers();
+}
+
 function closePanel() {
   map.closePopup();
   panelState = null;
@@ -298,12 +338,11 @@ function closePanel() {
 
 map.on("popupclose", (e) => {
   if (panelState && panelState.popup === e.popup) {
-    if (panelState.element.id === undefined) {
+    if (panelState.element.id === undefined && panelState.layer) {
       map.removeLayer(panelState.layer);
       cancelDrawing();
     }
     panelState = null;
-    if (importQueue.length > 0) setTimeout(openNextImportCandidate, 50);
   }
 });
 
@@ -430,13 +469,6 @@ function openCreatePanel(geomType, coords, note) {
 
 // ── Import da OpenStreetMap (Overpass API) ──
 let osmCandidatesLayer = null;
-const importQueue = []; // { geomType, coords, note } — aperti in editing uno alla volta dopo l'import
-
-function openNextImportCandidate() {
-  if (importQueue.length === 0) return;
-  const next = importQueue.shift();
-  openCreatePanel(next.geomType, next.coords, next.note);
-}
 
 // Configurazione dell'import per categoria: query Overpass e etichette risultanti.
 const OSM_IMPORT = {
@@ -718,8 +750,7 @@ btnOsmImportSelection.addEventListener("click", () => {
   );
   if (entries.length === 0) return;
   clearOsmSelection();
-  importQueue.push(...entries);
-  openNextImportCandidate();
+  openBulkPanel(entries);
 });
 
 btnPoint.addEventListener("click", () => startDrawing("point"));
