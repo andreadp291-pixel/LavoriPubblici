@@ -73,9 +73,18 @@ function buildLayer(element) {
   }
 }
 
+function elementCenter(element) {
+  if (element.geom_type === "point") {
+    const [lat, lon] = element.geom_coords;
+    return L.latLng(lat, lon);
+  }
+  const bounds = L.latLngBounds(element.geom_coords);
+  return bounds.getCenter();
+}
+
 function addElementToMap(element) {
   const layer = buildLayer(element).addTo(map);
-  layer.on("click", () => openPanel(element, layer));
+  layer.on("click", (e) => openPanel(element, layer, e.latlng || elementCenter(element)));
   layersById.set(element.id, { element, layer });
 }
 
@@ -96,111 +105,141 @@ async function loadElements() {
   }
 }
 
-// ── Pannello dettagli / modifica ──
-const panel = document.getElementById("element-panel");
-const panelTitle = document.getElementById("panel-title");
-const panelNote = document.getElementById("panel-note");
-const panelProgrammata = document.getElementById("panel-programmata");
-const panelUltima = document.getElementById("panel-ultima");
-const panelError = document.getElementById("panel-error");
-const panelEditBtn = document.getElementById("panel-edit");
-const panelSaveBtn = document.getElementById("panel-save");
-const panelDeleteBtn = document.getElementById("panel-delete");
+// ── Mini popup flottante dettagli / modifica ──
+let panelState = null; // { element, layer, editing, popup }
 
-let panelState = null; // { element, layer, editing }
+function buildPopupHtml() {
+  return `
+    <div class="popup-form">
+      <h2 class="popup-title">${GEOM_LABELS[panelState.element.geom_type]} — ${CATEGORY_LABELS[category]}</h2>
+      <label>Nota</label>
+      <textarea id="popup-note"></textarea>
+      <label>Programmato per il</label>
+      <input type="date" id="popup-programmata" />
+      <label>Ultima esecuzione</label>
+      <input type="date" id="popup-ultima" />
+      <div class="error-msg" id="popup-error"></div>
+      <div class="popup-actions">
+        <button class="btn-save" id="popup-edit" hidden>Modifica</button>
+        <button class="btn-save" id="popup-save" hidden>Salva</button>
+        <button class="btn-delete" id="popup-delete" hidden>Elimina</button>
+      </div>
+    </div>`;
+}
 
 function applyPanelMode() {
   const isNew = panelState.element.id === undefined;
   const editing = panelState.editing;
-  const fieldsEnabled = editing;
 
-  panelNote.disabled = !fieldsEnabled;
-  panelProgrammata.disabled = !fieldsEnabled;
-  panelUltima.disabled = !fieldsEnabled;
+  const note = document.getElementById("popup-note");
+  const programmata = document.getElementById("popup-programmata");
+  const ultima = document.getElementById("popup-ultima");
+  const editBtn = document.getElementById("popup-edit");
+  const saveBtn = document.getElementById("popup-save");
+  const deleteBtn = document.getElementById("popup-delete");
+  if (!note) return;
 
-  panelEditBtn.hidden = !canEdit || editing;
-  panelSaveBtn.hidden = !editing;
-  panelDeleteBtn.hidden = !editing || isNew;
+  note.disabled = !editing;
+  programmata.disabled = !editing;
+  ultima.disabled = !editing;
+
+  editBtn.hidden = !canEdit || editing;
+  saveBtn.hidden = !editing;
+  deleteBtn.hidden = !editing || isNew;
 }
 
-function openPanel(element, layer) {
-  panelState = { element, layer, editing: element.id === undefined };
-  panelTitle.textContent = `${GEOM_LABELS[element.geom_type]} — ${CATEGORY_LABELS[category]}`;
-  panelNote.value = element.note || "";
-  panelProgrammata.value = element.data_programmata || "";
-  panelUltima.value = element.data_ultima_esecuzione || "";
-  panelError.textContent = "";
+function wirePopupHandlers() {
+  const note = document.getElementById("popup-note");
+  const programmata = document.getElementById("popup-programmata");
+  const ultima = document.getElementById("popup-ultima");
+  const error = document.getElementById("popup-error");
+  const editBtn = document.getElementById("popup-edit");
+  const saveBtn = document.getElementById("popup-save");
+  const deleteBtn = document.getElementById("popup-delete");
+  if (!note) return;
+
+  note.value = panelState.element.note || "";
+  programmata.value = panelState.element.data_programmata || "";
+  ultima.value = panelState.element.data_ultima_esecuzione || "";
 
   applyPanelMode();
 
-  panel.hidden = false;
+  editBtn.addEventListener("click", () => {
+    panelState.editing = true;
+    applyPanelMode();
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    error.textContent = "";
+    const noteVal = note.value;
+    const data_programmata = programmata.value || null;
+    const data_ultima_esecuzione = ultima.value || null;
+
+    try {
+      if (panelState.element.id === undefined) {
+        const created = await apiFetch("/api/points", {
+          method: "POST",
+          body: JSON.stringify({
+            category,
+            geom_type: panelState.element.geom_type,
+            geom_coords: panelState.element.geom_coords,
+            note: noteVal,
+            data_programmata,
+            data_ultima_esecuzione,
+          }),
+        });
+        map.removeLayer(panelState.layer);
+        addElementToMap(created);
+        finishDrawingUi();
+      } else {
+        const updated = await apiFetch(`/api/points/${panelState.element.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ note: noteVal, data_programmata, data_ultima_esecuzione }),
+        });
+        removeElementFromMap(updated.id);
+        addElementToMap(updated);
+      }
+      map.closePopup();
+    } catch (err) {
+      error.textContent = err.message || "Errore durante il salvataggio";
+    }
+  });
+
+  deleteBtn.addEventListener("click", async () => {
+    if (panelState.element.id === undefined) return;
+    if (!confirm("Eliminare questo elemento?")) return;
+    try {
+      await apiFetch(`/api/points/${panelState.element.id}`, { method: "DELETE" });
+      removeElementFromMap(panelState.element.id);
+      map.closePopup();
+    } catch (err) {
+      alert(err.message || "Errore durante l'eliminazione");
+    }
+  });
+}
+
+function openPanel(element, layer, latlng) {
+  panelState = { element, layer, editing: element.id === undefined };
+  const popup = L.popup({ closeButton: true, minWidth: 240, autoPan: true })
+    .setLatLng(latlng)
+    .setContent(buildPopupHtml())
+    .openOn(map);
+  panelState.popup = popup;
+  wirePopupHandlers();
 }
 
 function closePanel() {
-  panel.hidden = true;
+  map.closePopup();
   panelState = null;
 }
 
-panelEditBtn.addEventListener("click", () => {
-  if (!panelState) return;
-  panelState.editing = true;
-  applyPanelMode();
-});
-
-document.getElementById("panel-close").addEventListener("click", () => {
-  if (panelState && panelState.element.id === undefined) {
-    cancelDrawing();
-  } else {
-    closePanel();
-  }
-});
-
-panelSaveBtn.addEventListener("click", async () => {
-  if (!panelState) return;
-  panelError.textContent = "";
-  const note = panelNote.value;
-  const data_programmata = panelProgrammata.value || null;
-  const data_ultima_esecuzione = panelUltima.value || null;
-
-  try {
+map.on("popupclose", (e) => {
+  if (panelState && panelState.popup === e.popup) {
     if (panelState.element.id === undefined) {
-      const created = await apiFetch("/api/points", {
-        method: "POST",
-        body: JSON.stringify({
-          category,
-          geom_type: panelState.element.geom_type,
-          geom_coords: panelState.element.geom_coords,
-          note,
-          data_programmata,
-          data_ultima_esecuzione,
-        }),
-      });
       map.removeLayer(panelState.layer);
-      addElementToMap(created);
-      finishDrawingUi();
-    } else {
-      const updated = await apiFetch(`/api/points/${panelState.element.id}`, {
-        method: "PUT",
-        body: JSON.stringify({ note, data_programmata, data_ultima_esecuzione }),
-      });
-      removeElementFromMap(updated.id);
-      addElementToMap(updated);
+      cancelDrawing();
     }
-    closePanel();
-  } catch (err) {
-    panelError.textContent = err.message || "Errore durante il salvataggio";
-  }
-});
-
-panelDeleteBtn.addEventListener("click", async () => {
-  if (!panelState || panelState.element.id === undefined) return;
-  if (!confirm("Eliminare questo elemento?")) return;
-  try {
-    await apiFetch(`/api/points/${panelState.element.id}`, { method: "DELETE" });
-    removeElementFromMap(panelState.element.id);
-    closePanel();
-  } catch (err) {
-    alert(err.message || "Errore durante l'eliminazione");
+    panelState = null;
   }
 });
 
@@ -271,7 +310,7 @@ function updateTempLayer() {
 function openCreatePanel(geomType, coords) {
   const fakeElement = { id: undefined, geom_type: geomType, geom_coords: coords, note: "", data_programmata: null, data_ultima_esecuzione: null };
   const layer = buildLayer(fakeElement).addTo(map);
-  openPanel(fakeElement, layer);
+  openPanel(fakeElement, layer, elementCenter(fakeElement));
 }
 
 btnPoint.addEventListener("click", () => startDrawing("point"));

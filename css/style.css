@@ -230,7 +230,8 @@ button {
 }
 
 .popup-form select,
-.popup-form textarea {
+.popup-form textarea,
+.popup-form input[type="date"] {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -243,10 +244,25 @@ button {
   min-height: 50px;
 }
 
+.popup-form textarea:disabled,
+.popup-form input:disabled {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.popup-title {
+  font-size: 1rem;
+  margin: 0 0 4px;
+}
+
 .popup-actions {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+}
+
+.leaflet-popup-content {
+  width: 240px !important;
 }
 
 .draw-toolbar {
@@ -286,72 +302,6 @@ button {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.element-panel {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1000;
-  display: flex;
-  justify-content: center;
-  padding: 0 16px 16px;
-}
-
-.element-panel-inner {
-  width: 100%;
-  max-width: 480px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 20px;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
-}
-
-.element-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.element-panel-header h2 {
-  font-size: 1.05rem;
-  margin: 0;
-}
-
-.panel-close {
-  background: transparent;
-  border: none;
-  font-size: 1.4rem;
-  line-height: 1;
-  color: var(--muted);
-  padding: 0 4px;
-}
-
-.element-panel label {
-  margin-top: 10px;
-}
-
-.element-panel textarea,
-.element-panel input[type="date"] {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 0.9rem;
-}
-
-.element-panel textarea {
-  resize: vertical;
-  min-height: 50px;
-}
-
-.element-panel textarea:disabled,
-.element-panel input:disabled {
-  background: var(--bg);
-  color: var(--muted);
 }
 
 .popup-actions button {
