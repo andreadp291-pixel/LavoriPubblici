@@ -289,7 +289,9 @@ function setupDrawToolbar() {
   btnPoint.hidden = !allowed.includes("point");
   btnLine.hidden = !allowed.includes("line");
   btnPolygon.hidden = !allowed.includes("polygon");
-  btnImportOsm.hidden = category !== "potature";
+  const osmCfg = OSM_IMPORT[category];
+  btnImportOsm.hidden = !osmCfg;
+  if (osmCfg) btnImportOsm.textContent = osmCfg.buttonLabel;
   toolbar.hidden = false;
 }
 
@@ -387,15 +389,38 @@ function openCreatePanel(geomType, coords, note) {
   openPanel(fakeElement, layer, elementCenter(fakeElement));
 }
 
-// ── Import alberi/siepi da OpenStreetMap (Overpass API) ──
+// ── Import da OpenStreetMap (Overpass API) ──
 let osmCandidatesLayer = null;
 
-function osmTagLabel(tags) {
-  if (tags.natural === "tree") return "Albero (OSM)";
-  if (tags.natural === "tree_row") return "Filare di alberi (OSM)";
-  if (tags.barrier === "hedge") return "Siepe (OSM)";
-  return "Elemento OSM";
-}
+// Configurazione dell'import per categoria: query Overpass e etichette risultanti.
+const OSM_IMPORT = {
+  potature: {
+    buttonLabel: "Importa alberi/siepi da OSM",
+    noneLabel: "Nessun albero/siepe OSM trovato qui",
+    buildQuery: (bbox) => `[out:json][timeout:25];(
+      node["natural"="tree"](${bbox});
+      way["natural"="tree_row"](${bbox});
+      way["barrier"="hedge"](${bbox});
+    );out geom;`,
+    tagLabel: (tags) => {
+      if (tags.natural === "tree") return "Albero (OSM)";
+      if (tags.natural === "tree_row") return "Filare di alberi (OSM)";
+      if (tags.barrier === "hedge") return "Siepe (OSM)";
+      return "Elemento OSM";
+    },
+  },
+  asfaltature: {
+    buttonLabel: "Importa strade da OSM",
+    noneLabel: "Nessuna strada OSM trovata qui",
+    buildQuery: (bbox) => `[out:json][timeout:25];(
+      way["highway"](${bbox});
+    );out geom;`,
+    tagLabel: (tags) => {
+      const name = tags.name ? ` ${tags.name}` : "";
+      return `Strada${name} (OSM)`;
+    },
+  },
+};
 
 function osmCandidateStyleMarker() {
   return L.divIcon({
@@ -411,21 +436,20 @@ function clearOsmCandidates() {
     map.removeLayer(osmCandidatesLayer);
     osmCandidatesLayer = null;
   }
-  btnImportOsm.textContent = "Importa alberi/siepi da OSM";
+  const cfg = OSM_IMPORT[category];
+  btnImportOsm.textContent = cfg.buttonLabel;
 }
 
 async function importFromOsm() {
+  const cfg = OSM_IMPORT[category];
+  if (!cfg) return;
   if (osmCandidatesLayer) {
     clearOsmCandidates();
     return;
   }
   const b = map.getBounds();
   const bbox = `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()}`;
-  const query = `[out:json][timeout:25];(
-    node["natural"="tree"](${bbox});
-    way["natural"="tree_row"](${bbox});
-    way["barrier"="hedge"](${bbox});
-  );out geom;`;
+  const query = cfg.buildQuery(bbox);
 
   btnImportOsm.disabled = true;
   btnImportOsm.textContent = "Ricerca su OSM in corso...";
@@ -435,7 +459,7 @@ async function importFromOsm() {
     osmCandidatesLayer = L.layerGroup().addTo(map);
     let count = 0;
     data.elements.forEach((el) => {
-      const note = osmTagLabel(el.tags || {});
+      const note = cfg.tagLabel(el.tags || {});
       if (el.type === "node") {
         const coord = [el.lat, el.lon];
         const marker = L.marker(coord, { icon: osmCandidateStyleMarker() });
@@ -455,10 +479,10 @@ async function importFromOsm() {
 
     btnImportOsm.textContent = count > 0
       ? `${count} elementi OSM trovati (clicca per importare) — Nascondi`
-      : "Nessun albero/siepe OSM trovato qui — Nascondi";
+      : `${cfg.noneLabel} — Nascondi`;
   } catch (err) {
     alert("Errore durante la ricerca su OpenStreetMap: " + (err.message || err));
-    btnImportOsm.textContent = "Importa alberi/siepi da OSM";
+    btnImportOsm.textContent = cfg.buttonLabel;
   } finally {
     btnImportOsm.disabled = false;
   }
